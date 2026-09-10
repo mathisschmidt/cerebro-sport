@@ -84,7 +84,7 @@
 	}
 </script>
 
-<svelte:head><title>Library — Van Damme</title></svelte:head>
+<svelte:head><title>Library — Cerebro Sport</title></svelte:head>
 
 <PageHeader title="Library" subtitle="Your exercises, sessions and repeating plans.">
 	{#snippet actions()}

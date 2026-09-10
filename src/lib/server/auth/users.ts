@@ -1,4 +1,4 @@
-import { count, eq } from 'drizzle-orm';
+import { asc, count, eq } from 'drizzle-orm';
 import { db, schema } from '../db/client.ts';
 
 /**
@@ -23,6 +23,26 @@ export function findUserByUsername(name: string) {
 
 export function setUserRole(userId: string, role: 'admin' | 'user'): void {
 	db.update(schema.user).set({ role }).where(eq(schema.user.id, userId)).run();
+}
+
+/**
+ * The account that stands in for "whoever runs this instance": the longest
+ * standing admin, falling back to the longest standing user.
+ */
+export function findPrimaryUser(): { id: string; username: string | null } | undefined {
+	return (
+		db
+			.select({ id: schema.user.id, username: schema.user.username })
+			.from(schema.user)
+			.where(eq(schema.user.role, 'admin'))
+			.orderBy(asc(schema.user.createdAt))
+			.get() ??
+		db
+			.select({ id: schema.user.id, username: schema.user.username })
+			.from(schema.user)
+			.orderBy(asc(schema.user.createdAt))
+			.get()
+	);
 }
 
 export function countAdmins(): number {

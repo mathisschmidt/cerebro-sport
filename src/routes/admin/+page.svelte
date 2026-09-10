@@ -117,7 +117,7 @@
 	}
 </script>
 
-<svelte:head><title>Admin — Van Damme</title></svelte:head>
+<svelte:head><title>Admin — Cerebro Sport</title></svelte:head>
 
 <PageHeader title="Admin" subtitle="Who can get in, and who is already here.">
 	{#snippet actions()}

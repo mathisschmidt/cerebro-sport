@@ -33,7 +33,7 @@
 	}
 </script>
 
-<svelte:head><title>{data.session.name} — Van Damme</title></svelte:head>
+<svelte:head><title>{data.session.name} — Cerebro Sport</title></svelte:head>
 
 <PageHeader
 	title={data.session.name}

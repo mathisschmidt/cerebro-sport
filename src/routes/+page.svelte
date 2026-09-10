@@ -68,7 +68,7 @@
 	}
 </script>
 
-<svelte:head><title>Today — Van Damme</title></svelte:head>
+<svelte:head><title>Today — Cerebro Sport</title></svelte:head>
 
 <div class="flex flex-col gap-6">
 	<header>

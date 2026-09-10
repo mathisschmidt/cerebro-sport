@@ -2,7 +2,7 @@ import { building } from '$app/environment';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
 import type { UserRole } from '$domain/models/user.ts';
-import { auth } from '$server/auth/auth.ts';
+import { ConfigurationError, auth } from '$server/auth/auth.ts';
 import { ensureBootstrapped } from '$server/auth/bootstrap.ts';
 
 /**
@@ -13,8 +13,8 @@ import { ensureBootstrapped } from '$server/auth/bootstrap.ts';
  * anything, rather than protected because somebody remembered.
  */
 
-/** Reachable without a session. */
-const PUBLIC_PATHS = ['/login', '/register'];
+/** Reachable without a session. `/api/health` is how a container is probed. */
+const PUBLIC_PATHS = ['/login', '/register', '/api/health'];
 
 /** Better Auth's own endpoints, which must stay open to let people sign in. */
 const AUTH_PREFIX = '/api/auth';
@@ -35,8 +35,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (building) return svelteKitHandler({ event, resolve, auth, building });
 
 	// First request of the process creates the default admin and adopts any
-	// pre-existing training data.
-	await ensureBootstrapped();
+	// pre-existing training data. Only a misconfiguration is worth refusing to
+	// serve over — anything else is logged, because a boot hiccup must not lock
+	// everybody out of an instance that is otherwise fine.
+	try {
+		await ensureBootstrapped();
+	} catch (error) {
+		if (error instanceof ConfigurationError) throw error;
+		console.error('[auth] bootstrap failed; continuing to serve', error);
+	}
 
 	const result = await auth.api.getSession({ headers: event.request.headers });
 	event.locals.user = result

@@ -1,4 +1,4 @@
-# Van Damme — training log
+# Cerebro Sport — training log
 
 A sport-agnostic training app: build a library of exercises, compose them into
 sessions, put those sessions on a repeating schedule, run them with a timer, and
@@ -39,7 +39,7 @@ six weeks of history so the metrics pages have something to show.
 | `npm run db:seed` | Populate an empty database with demo data |
 | `npm run db:reset` | Delete the database file |
 | `npm run db:studio` | Drizzle Studio, a browser UI over the tables |
-| `npm run skill:write` | Regenerate `skills/van-damme-session-author/SKILL.md` from the format spec |
+| `npm run skill:write` | Regenerate `skills/cerebro-sport-session-author/SKILL.md` from the format spec |
 
 Set `BETTER_AUTH_SECRET` before deploying anywhere real — it signs session
 cookies, and there is a development fallback that must not be used in
@@ -63,6 +63,9 @@ invisible to everyone else, including other admins.
 **First run** creates an admin: `admin` / `admin123`. Change the password, or
 set `ADMIN_USERNAME` and `ADMIN_PASSWORD` before the first boot. If the database
 already held training data, that data is adopted by this account.
+
+Sign-in is by username, so the synthesised email address is never typed and
+never used.
 
 **Registration is closed by default.** A fresh instance is not open to whoever
 finds it. An admin can open it from the Admin page, and while it is closed only
@@ -133,7 +136,7 @@ which matters when a model writes the file and a clipboard carries it.
 
 ```jsonc
 {
-  "format": "van-damme.training-pack",
+  "format": "cerebro-sport.training-pack",
   "version": 1,
   "summary": "…",
   "exercises": [ /* new movements, with instructions */ ],
@@ -155,13 +158,106 @@ accepts.
 
 ### Bring your own agent
 
-`skills/van-damme-session-author/SKILL.md` is the same rules packaged as an
+`skills/cerebro-sport-session-author/SKILL.md` is the same rules packaged as an
 agent skill: drop it into Claude Code, an agent framework or a custom GPT and
 you can ask for a session in plain language, with no prompt to copy each time.
 The Coach page offers the same file as a download.
 
 It is **generated** from `formatSpec()` in `coach-prompt.ts` — the single source
 the on-page prompt also uses. After changing the format, run `npm run skill:write`.
+
+---
+
+## Deploying
+
+One container, two volumes. The app applies its own migrations and creates its
+own first admin at boot, so there is no setup step.
+
+It serves **plain HTTP**. If you are putting it on the internet, run a reverse
+proxy in front of it and terminate TLS there — nginx, Traefik, Caddy, a tunnel,
+whatever you already use. On a home network you can skip that and reach it
+directly.
+
+### Portainer
+
+Deploy as a stack **from the Git repository** — not by pasting the compose file
+into the web editor. A pasted stack has no source tree, and this compose file
+builds the image from the Dockerfile.
+
+1. **Stacks → Add stack → Repository**
+2. Repository URL: this repo. Compose path: `docker-compose.yml`
+3. Under **Environment variables**, add `BETTER_AUTH_SECRET` and `ORIGIN`
+   (and `ADMIN_USERNAME` / `ADMIN_PASSWORD` if you want something other than
+   `admin` / `admin123`)
+4. Deploy
+
+Redeploying after a push: **Pull and redeploy** on the stack. Portainer rebuilds
+the image and recreates the container; the volumes are untouched.
+
+If you would rather not build on the server, build and push the image somewhere
+and replace the `build:` block with your registry tag.
+
+### Plain compose
+
+```bash
+cp .env.production.example .env
+$EDITOR .env                     # BETTER_AUTH_SECRET and ORIGIN are required
+docker compose up -d --build
+```
+
+### What has to be set
+
+| Variable | Why |
+|---|---|
+| `BETTER_AUTH_SECRET` | Signs session cookies. `openssl rand -base64 32`. The app refuses to serve in production without it; changing it signs everyone out. |
+| `ORIGIN` | The public URL, no trailing slash. SvelteKit builds absolute URLs from it and cannot infer it behind a proxy. On a LAN, the address you actually type on the phone: `http://192.168.1.20:3000`. |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | The account created on first boot only. Change the password after signing in. |
+| `BIND_ADDRESS` | Optional. Defaults to every interface. Set `127.0.0.1` if a reverse proxy on the same host should be the only thing that can reach it. |
+
+Both compose and Portainer refuse to start the stack if `BETTER_AUTH_SECRET` or
+`ORIGIN` is missing, and the error names the variable.
+
+### Backups
+
+The database is a single SQLite file on the `cerebro-sport-data` volume. Losing
+it loses everything; nothing else in the deployment holds state.
+
+```bash
+docker compose exec app node scripts/backup.mjs /backups
+```
+
+In Portainer that is **Containers → cerebro-sport → Console**, then the same
+command. It uses `VACUUM INTO`, which is safe against a running app — unlike
+copying the file, which can catch a half-written page or miss the write-ahead
+log. The last 14 snapshots are kept on the `cerebro-sport-backups` volume.
+
+Nothing runs this for you. Put it in cron on the host if you want it nightly:
+
+```bash
+0 3 * * * docker compose -f /path/to/docker-compose.yml exec -T app node scripts/backup.mjs /backups
+```
+
+To copy a snapshot off the volume, or restore one:
+
+```bash
+docker cp cerebro-sport-app-1:/backups/app-<timestamp>.db ./          # off
+docker compose down                                                    # restore
+docker run --rm -v cerebro-sport-data:/data -v "$PWD:/in" \
+  alpine cp /in/app-<timestamp>.db /data/app.db
+docker compose up -d
+```
+
+### Notes
+
+- **One replica, always.** SQLite is a single writer against a single file; a
+  second container against the same volume would corrupt it.
+- **Migrations run at boot**, from `db/client.ts`. A deploy that adds one needs
+  no extra command — but for the same reason, do not start two containers at
+  once against a fresh volume.
+- `GET /api/health` is public and checks that the database answers. It is what
+  the container health check probes, and what Portainer shows as healthy.
+- The image runs as the unprivileged `node` user and carries no source, no dev
+  dependencies and no build toolchain.
 
 ---
 
@@ -287,19 +383,26 @@ src/
     metrics/
     run/[id]/                 the workout runner
     api/                      JSON endpoints
+Dockerfile                    multi-stage build; runtime carries no sources
+docker-compose.yml            the deployment: one service, two volumes
 drizzle/                      generated SQL migrations
 skills/                       the agent skill file, generated from the format spec
 scripts/                      migrate · seed · reset · write-skill (+ alias hooks)
+  backup.mjs                  VACUUM INTO snapshot; runs inside the image too
 ```
 
-## Deployment
+## Running without Docker
 
-`npm run build` produces a standalone Node server via `adapter-node`:
+`npm run build` produces a standalone Node server via `adapter-node`. See
+[Deploying](#deploying) for the container route, which is the supported one.
 
 ```bash
 npm run build
-DATABASE_URL=/var/lib/vandamme/app.db PORT=3000 node build/index.js
+BETTER_AUTH_SECRET=$(openssl rand -base64 32) \
+ORIGIN=https://training.example.com \
+DATABASE_URL=/var/lib/cerebrosport/app.db \
+PORT=3000 node build/index.js
 ```
 
-The SQLite file and its `-wal`/`-shm` siblings are the entire state — back up the
-directory and you have backed up everything.
+The `drizzle/` folder must sit beside the process's working directory —
+migrations are read from it at boot.

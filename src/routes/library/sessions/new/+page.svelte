@@ -6,7 +6,7 @@
 	let { data }: { data: PageData } = $props();
 </script>
 
-<svelte:head><title>New session — Van Damme</title></svelte:head>
+<svelte:head><title>New session — Cerebro Sport</title></svelte:head>
 
 <PageHeader
 	title="New session"

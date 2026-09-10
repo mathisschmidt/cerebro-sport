@@ -92,7 +92,7 @@ Three pieces share one source of truth:
   come from the zod schemas, so a new exercise category appears in the prompt on
   its own.
 - The on-page prompt and `SKILL.md` both embed `formatSpec()`.
-- `skills/van-damme-session-author/SKILL.md` is **generated**. After changing
+- `skills/cerebro-sport-session-author/SKILL.md` is **generated**. After changing
   the format, run `npm run skill:write` and commit the result.
 
 `resolvePack()` is pure and is called from both sides: the Coach page renders
@@ -119,12 +119,43 @@ in `db/auth-schema.ts`, which is **generated** — after changing the plugins in
   `auth.ts` — not by `disableSignUp`. The hook lets sign-up through when the
   instance has no users at all: that is what creates the first admin at boot and
   is the recovery path if every account is deleted.
+- **Bootstrap only creates an account on a genuinely empty instance.** If the
+  configured `ADMIN_USERNAME` is missing but other accounts exist, it adopts
+  orphan rows to the longest-standing admin and creates nothing. Creating one
+  there is refused by the sign-up gate, and that error used to propagate out of
+  `handle` and 500 every request — see `ensureBootstrapped`, which also never
+  caches a rejection and is wrapped in `hooks.server.ts` so only a
+  `ConfigurationError` may take the app down.
 - Admin actions go through Better Auth's admin API with the caller's headers, so
   it does the authorising. `adminService` adds the guards it does not have
   (no deleting yourself, no removing your own admin role).
 - **Deleting a user must purge their data.** That happens in the Better Auth
   `user.delete.after` hook via `purgeUserData`, because the owned tables carry no
   foreign key to `user` — see the comment on `owner` in `schema.ts` for why.
+
+## Deployment
+
+`Dockerfile` + `docker-compose.yml` at the root, and nothing else. The app
+applies its own migrations and creates its own first admin at boot, so a deploy
+is build and restart — there is no setup step to forget.
+
+Deployment is expected to go through Portainer as a **Git repository stack**,
+because the compose file builds from the Dockerfile and a pasted stack has no
+source tree. Keep `build:` working; if you ever switch to a published image,
+say so in the README rather than leaving both half-configured.
+
+TLS is deliberately out of scope — the app serves plain HTTP and whoever
+deploys it puts their own proxy in front. Do not add one back to the compose
+file.
+
+- **One replica. Always.** SQLite is a single writer against a single file.
+- `GET /api/health` is public (listed in `PUBLIC_PATHS`) and pings the database.
+  The container health check probes it, and Portainer surfaces the result; do
+  not make it require a session or stop it touching storage.
+- `scripts/backup.mjs` is deliberately plain JavaScript and the one place
+  outside `db/client.ts` that names better-sqlite3 — it has to run inside the
+  runtime image, which carries no TypeScript sources. It uses `VACUUM INTO`;
+  never "back up" by copying a live database file.
 
 ## Things that will bite
 
@@ -146,6 +177,17 @@ in `db/auth-schema.ts`, which is **generated** — after changing the plugins in
   The default exists only so migration `0001` could add the column to a populated
   table; `claimOrphanRows` adopts those rows at first boot. Inserts must always
   state an owner.
+- **`npm ci --omit=dev` does not prune this project's dev dependencies.**
+  better-auth declares @sveltejs/kit, svelte, drizzle-kit and vitest as
+  *optional peer* dependencies, so npm counts our devDependency copies as
+  satisfying a production peer and never marks them dev. The Dockerfile needs
+  `--omit=dev --omit=peer --omit=optional` — dropping `--omit=optional` silently
+  puts vite, typescript and a build toolchain back in the runtime image
+  (17 packages / 76 MB becomes 68 / 189 MB). Check with
+  `npm ls --omit=dev --omit=peer --omit=optional` after touching dependencies.
+- **`overrides` pins better-sqlite3 for better-auth**, whose optional peer wants
+  `^12` while we run `^13`. Better Auth never loads that driver — we go through
+  the Drizzle adapter — so the override states the truth rather than downgrading.
 - **Pack exercise names are matched case-insensitively**, and the library's
   spelling wins over the pack's. An exercise referenced but never declared is
   created as a stub with a warning — not an error, because rejecting the whole

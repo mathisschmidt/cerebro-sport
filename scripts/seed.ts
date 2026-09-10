@@ -370,7 +370,7 @@ function seedHistory(
 
 async function main(): Promise<void> {
 	// The seed belongs to somebody, so the admin has to exist first.
-	const { adminId } = await ensureBootstrapped();
+	const { ownerId: adminId } = await ensureBootstrapped();
 
 	const existing = db.get<{ count: number }>(sql`select count(*) as count from exercises`);
 	if ((existing?.count ?? 0) > 0) {

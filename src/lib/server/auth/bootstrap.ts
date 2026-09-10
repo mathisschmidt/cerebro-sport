@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { db, schema } from '../db/client.ts';
 import { assertProductionReady, auth, emailForUsername } from './auth.ts';
-import { countUsers, findUserByUsername, setUserRole } from './users.ts';
+import { countUsers, findPrimaryUser, findUserByUsername, setUserRole } from './users.ts';
 
 /**
  * First-boot setup: make sure somebody can sign in, and that no training data
@@ -15,7 +15,8 @@ const DEFAULT_ADMIN_USERNAME = 'admin';
 const DEFAULT_ADMIN_PASSWORD = 'admin123';
 
 export interface BootstrapResult {
-	adminId: string;
+	/** Who pre-account training data belongs to. */
+	ownerId: string;
 	created: boolean;
 	claimedRows: number;
 }
@@ -24,7 +25,12 @@ let done: Promise<BootstrapResult> | null = null;
 
 /** Cached so concurrent first requests do not race to create the same admin. */
 export function ensureBootstrapped(): Promise<BootstrapResult> {
-	done ??= run();
+	done ??= run().catch((error: unknown) => {
+		// A rejected promise must not be cached: one transient failure would
+		// otherwise brick every later request for the life of the process.
+		done = null;
+		throw error;
+	});
 	return done;
 }
 
@@ -35,48 +41,45 @@ async function run(): Promise<BootstrapResult> {
 	const name = (process.env.ADMIN_USERNAME || DEFAULT_ADMIN_USERNAME).trim().toLowerCase();
 	const password = process.env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD;
 
-	const existing = findUserByUsername(name);
-	let created = false;
-	let adminId: string;
+	const configured = findUserByUsername(name);
+	if (configured) return settle(configured.id, false);
 
-	if (existing) {
-		adminId = existing.id;
-	} else {
-		// Goes through the normal sign-up path so the password is hashed by
-		// Better Auth. The sign-up gate lets this through because the instance
-		// has no users yet.
-		const wasEmpty = countUsers() === 0;
-		const result = await auth.api.signUpEmail({
-			body: {
-				name: 'Admin',
-				email: emailForUsername(name),
-				password,
-				username: name
-			}
-		});
-		adminId = result.user.id;
-		created = true;
-		if (!wasEmpty) {
-			console.warn('[auth] created the admin account on a non-empty instance');
-		}
+	/*
+	 * The configured admin does not exist. Only create it when nobody does:
+	 * an instance that already has accounts already has an administrator, and
+	 * the account may well have been renamed or deleted on purpose. Trying to
+	 * create one anyway is worse than useless — the sign-up gate refuses it,
+	 * and the error used to take every request down with it.
+	 */
+	if (countUsers() > 0) {
+		const primary = findPrimaryUser();
+		if (!primary) return { ownerId: '', created: false, claimedRows: 0 };
+		return settle(primary.id, false);
 	}
 
-	// The admin plugin defaults new accounts to `user`.
-	setUserRole(adminId, 'admin');
+	// Empty instance: create the first account, and make it an admin — the
+	// plugin defaults new accounts to `user`. The sign-up gate lets this
+	// through precisely because there are no users yet.
+	const result = await auth.api.signUpEmail({
+		body: { name: 'Admin', email: emailForUsername(name), password, username: name }
+	});
+	setUserRole(result.user.id, 'admin');
 
-	const claimedRows = claimOrphanRows(adminId);
+	console.log(
+		`[auth] created the default admin "${name}"` +
+			(password === DEFAULT_ADMIN_PASSWORD ? ' with the default password — change it' : '')
+	);
 
-	if (created) {
-		console.log(
-			`[auth] created the default admin "${name}"` +
-				(password === DEFAULT_ADMIN_PASSWORD ? ' with the default password — change it' : '')
-		);
-	}
+	return settle(result.user.id, true);
+}
+
+/** Adopts any orphan rows and reports what happened. */
+function settle(ownerId: string, created: boolean): BootstrapResult {
+	const claimedRows = claimOrphanRows(ownerId);
 	if (claimedRows > 0) {
-		console.log(`[auth] assigned ${claimedRows} pre-existing rows to "${name}"`);
+		console.log(`[auth] assigned ${claimedRows} pre-existing rows to an existing account`);
 	}
-
-	return { adminId, created, claimedRows };
+	return { ownerId, created, claimedRows };
 }
 
 /**

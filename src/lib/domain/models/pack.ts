@@ -23,7 +23,7 @@ import {
  * is produced by a model and pasted through a clipboard.
  */
 
-export const PACK_FORMAT = 'van-damme.training-pack';
+export const PACK_FORMAT = 'cerebro-sport.training-pack';
 export const PACK_VERSION = 1;
 
 /** An exercise name as written in a pack. Resolution is case-insensitive. */

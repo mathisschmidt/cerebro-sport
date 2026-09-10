@@ -9,6 +9,18 @@ import { idSchema } from './common.ts';
  * all agree on what a username is.
  */
 
+/**
+ * Sign-in is by username, but Better Auth requires an address, so one is
+ * synthesised. Lives in the domain rather than the server layer because the
+ * register form needs it too — and because a second copy of this rule would
+ * silently create accounts nobody can sign into.
+ */
+export const SYNTHETIC_EMAIL_DOMAIN = 'cerebro-sport.local';
+
+export function emailForUsername(name: string): string {
+	return `${name.trim().toLowerCase()}@${SYNTHETIC_EMAIL_DOMAIN}`;
+}
+
 export const userRoleSchema = z.enum(['admin', 'user']);
 export type UserRole = z.infer<typeof userRoleSchema>;
 

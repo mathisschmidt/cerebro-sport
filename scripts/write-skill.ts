@@ -9,7 +9,7 @@ import { buildSkillFile } from '../src/lib/domain/services/coach-prompt.ts';
  * page serves, so the committed file cannot drift from what the app hands out.
  * Re-run this after changing the pack format.
  */
-const target = resolve(process.cwd(), 'skills/van-damme-session-author/SKILL.md');
+const target = resolve(process.cwd(), 'skills/cerebro-sport-session-author/SKILL.md');
 mkdirSync(dirname(target), { recursive: true });
 writeFileSync(target, buildSkillFile(), 'utf8');
 console.log(`Wrote ${target}`);

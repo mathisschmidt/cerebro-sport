@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { authClient, authErrorMessage } from '$client/auth.ts';
-	import { passwordSchema, usernameSchema } from '$domain/models/user.ts';
+	import { emailForUsername, passwordSchema, usernameSchema } from '$domain/models/user.ts';
 	import Button from '$components/ui/Button.svelte';
 	import Field from '$components/ui/Field.svelte';
 	import Icon from '$components/ui/Icon.svelte';
@@ -34,7 +34,7 @@
 		const name = username.trim().toLowerCase();
 		const result = await authClient.signUp.email({
 			// No mail is configured, so the address is derived rather than asked for.
-			email: `${name}@van-damme.local`,
+			email: emailForUsername(name),
 			password,
 			name,
 			username: name
@@ -49,7 +49,7 @@
 	}
 </script>
 
-<svelte:head><title>Create an account — Van Damme</title></svelte:head>
+<svelte:head><title>Create an account — Cerebro Sport</title></svelte:head>
 
 <div class="flex min-h-[100dvh] items-center justify-center px-4 py-10">
 	<div class="w-full max-w-sm">

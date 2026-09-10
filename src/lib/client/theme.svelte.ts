@@ -2,7 +2,7 @@ import { browser } from '$app/environment';
 
 export type Theme = 'dark' | 'light';
 
-const STORAGE_KEY = 'vd:theme';
+const STORAGE_KEY = 'cerebro-sport:theme';
 
 /** Reads whatever the inline script in app.html already applied. */
 function initial(): Theme {

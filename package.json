@@ -1,5 +1,5 @@
 {
-	"name": "my-van-damme",
+	"name": "cerebro-sport",
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
@@ -15,7 +15,8 @@
 		"db:seed": "node --import ./scripts/register-aliases.mjs scripts/seed.ts",
 		"db:studio": "drizzle-kit studio",
 		"db:reset": "node scripts/reset.ts",
-		"skill:write": "node --import ./scripts/register-aliases.mjs scripts/write-skill.ts"
+		"skill:write": "node --import ./scripts/register-aliases.mjs scripts/write-skill.ts",
+		"db:backup": "node scripts/backup.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^5.5.7",

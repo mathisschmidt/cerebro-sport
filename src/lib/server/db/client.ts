@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import Database from 'better-sqlite3';
+import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from './schema.ts';
@@ -46,13 +47,21 @@ function createDatabase(url: string) {
  * Cached on globalThis so Vite's HMR does not open a new connection — and
  * re-run migrations — on every server module reload.
  */
-const globalForDb = globalThis as unknown as { __vanDammeDb?: ReturnType<typeof createDatabase> };
+const globalForDb = globalThis as unknown as { __cerebroSportDb?: ReturnType<typeof createDatabase> };
 
 export const db: Database =
-	globalForDb.__vanDammeDb ?? (globalForDb.__vanDammeDb = createDatabase(databaseUrl()));
+	globalForDb.__cerebroSportDb ?? (globalForDb.__cerebroSportDb = createDatabase(databaseUrl()));
 
 function databaseUrl(): string {
 	return process.env.DATABASE_URL?.trim() || './data/app.db';
+}
+
+/**
+ * Cheapest possible round trip to the database file, for the health check.
+ * Throws if the file is missing, locked beyond the busy timeout, or corrupt.
+ */
+export function pingDatabase(): void {
+	db.get(sql`select 1`);
 }
 
 export { schema };

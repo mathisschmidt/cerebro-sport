@@ -49,7 +49,7 @@
 </script>
 
 <svelte:head>
-	<title>Van Damme — Training</title>
+	<title>Cerebro Sport — Training</title>
 </svelte:head>
 
 {#if immersive}
@@ -65,7 +65,7 @@
 					<Icon name="dumbbell" size={18} />
 				</span>
 				<span class="text-[15px] leading-tight font-semibold">
-					Van&nbsp;Damme
+					Cerebro&nbsp;Sport
 					<span class="text-ink-subtle block text-[11px] font-normal">Training log</span>
 				</span>
 			</a>
@@ -149,7 +149,7 @@
 					<span class="bg-accent text-accent-ink grid size-7 place-items-center rounded-lg">
 						<Icon name="dumbbell" size={16} />
 					</span>
-					<span class="text-sm font-semibold">Van&nbsp;Damme</span>
+					<span class="text-sm font-semibold">Cerebro&nbsp;Sport</span>
 				</a>
 				<div class="-mr-2 flex items-center">
 					{#if data.user?.role === 'admin'}

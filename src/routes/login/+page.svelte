@@ -34,7 +34,7 @@
 	}
 </script>
 
-<svelte:head><title>Sign in — Van Damme</title></svelte:head>
+<svelte:head><title>Sign in — Cerebro Sport</title></svelte:head>
 
 <div class="flex min-h-[100dvh] items-center justify-center px-4 py-10">
 	<div class="w-full max-w-sm">
@@ -42,7 +42,7 @@
 			<span class="bg-accent text-accent-ink mb-3 grid size-12 place-items-center rounded-2xl">
 				<Icon name="dumbbell" size={26} />
 			</span>
-			<h1 class="text-ink text-xl font-semibold">Van Damme</h1>
+			<h1 class="text-ink text-xl font-semibold">Cerebro Sport</h1>
 			<p class="text-ink-subtle mt-1 text-[13px]">Sign in to your training log.</p>
 		</div>
 

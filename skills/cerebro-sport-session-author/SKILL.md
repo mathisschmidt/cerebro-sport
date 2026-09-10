@@ -1,17 +1,17 @@
 ---
-name: van-damme-session-author
-description: Write training sessions, exercises and schedules as a Van Damme training pack (JSON) that can be imported directly into the Van Damme training app. Use whenever the user asks for a workout, a training session, a training programme or a weekly training plan that they want to import, or mentions a "training pack".
+name: cerebro-sport-session-author
+description: Write training sessions, exercises and schedules as a Cerebro Sport training pack (JSON) that can be imported directly into the Cerebro Sport training app. Use whenever the user asks for a workout, a training session, a training programme or a weekly training plan that they want to import, or mentions a "training pack".
 ---
 
-# Van Damme session author
+# Cerebro Sport session author
 
 Design training and emit it as a **training pack** — a single JSON object the
-Van Damme training app imports directly.
+Cerebro Sport training app imports directly.
 
 ## When to use this
 
 Trigger on any request to build a workout, session, circuit, training programme
-or weekly plan intended for the Van Damme app. If the user just wants advice or
+or weekly plan intended for the Cerebro Sport app. If the user just wants advice or
 a discussion about training, answer normally; only produce a pack when they want
 something importable.
 
@@ -37,7 +37,7 @@ Return a single JSON object — the "training pack".
 
 ```
 {
-  "format": "van-damme.training-pack",
+  "format": "cerebro-sport.training-pack",
   "version": 1,
   "summary": string,            // one or two sentences about what you built, and any caveat
   "exercises": Exercise[],      // every NEW movement the sessions use
@@ -152,7 +152,7 @@ Allowed types: reps | time | distance. `time` runs a countdown in the app; `reps
 
 ```json
 {
-  "format": "van-damme.training-pack",
+  "format": "cerebro-sport.training-pack",
   "version": 1,
   "summary": "A short bodyweight conditioning session, no equipment.",
   "exercises": [

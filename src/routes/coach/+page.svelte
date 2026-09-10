@@ -75,7 +75,7 @@
 	}
 </script>
 
-<svelte:head><title>Coach — Van Damme</title></svelte:head>
+<svelte:head><title>Coach — Cerebro Sport</title></svelte:head>
 
 <PageHeader
 	title="Coach"

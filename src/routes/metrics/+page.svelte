@@ -35,7 +35,7 @@
 	);
 </script>
 
-<svelte:head><title>Metrics — Van Damme</title></svelte:head>
+<svelte:head><title>Metrics — Cerebro Sport</title></svelte:head>
 
 <PageHeader title="Metrics" subtitle="Where the time goes, and whether it is going faster." />
 

@@ -6,7 +6,7 @@
 	let { data }: { data: PageData } = $props();
 </script>
 
-<svelte:head><title>Edit {data.session.name} — Van Damme</title></svelte:head>
+<svelte:head><title>Edit {data.session.name} — Cerebro Sport</title></svelte:head>
 
 <PageHeader
 	title="Edit session"

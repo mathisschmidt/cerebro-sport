@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { admin, username } from 'better-auth/plugins';
+import { emailForUsername } from '$domain/models/user.ts';
 import { db, schema } from '../db/client.ts';
 import { countUsers } from './users.ts';
 import { purgeUserData } from './purge.ts';
@@ -17,13 +18,6 @@ import { settingsService } from '../services/settings.service.ts';
  * plugin is what people actually sign in with, and an address is synthesised
  * from it.
  */
-
-/** Sign-in is by username; this fills the address column Better Auth requires. */
-export const SYNTHETIC_EMAIL_DOMAIN = 'van-damme.local';
-
-export function emailForUsername(name: string): string {
-	return `${name.trim().toLowerCase()}@${SYNTHETIC_EMAIL_DOMAIN}`;
-}
 
 /** Stable across a dev restart, so sessions survive a reload. */
 const DEV_SECRET = 'dev-only-insecure-secret-do-not-use-in-production';
@@ -44,11 +38,22 @@ function secret(): string {
 	return process.env.BETTER_AUTH_SECRET?.trim() || DEV_SECRET;
 }
 
+/**
+ * Refusing to serve is the correct response to this, unlike other boot
+ * problems — hence its own type, which `hooks.server.ts` rethrows.
+ */
+export class ConfigurationError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'ConfigurationError';
+	}
+}
+
 /** Called once from `ensureBootstrapped`, on the first real request. */
 export function assertProductionReady(): void {
 	if (hasConfiguredSecret()) return;
 	if (process.env.NODE_ENV === 'production') {
-		throw new Error(
+		throw new ConfigurationError(
 			'BETTER_AUTH_SECRET must be set in production — it signs session cookies.'
 		);
 	}
@@ -84,7 +89,7 @@ function baseURL() {
 }
 
 export const auth = betterAuth({
-	appName: 'Van Damme',
+	appName: 'Cerebro Sport',
 	secret: secret(),
 	baseURL: baseURL(),
 	database: drizzleAdapter(db, { provider: 'sqlite', schema }),
@@ -136,3 +141,6 @@ export const auth = betterAuth({
 });
 
 export type Auth = typeof auth;
+
+// Re-exported so server callers keep importing auth concerns from one place.
+export { emailForUsername };
