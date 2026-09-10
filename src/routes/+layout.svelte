@@ -17,6 +17,7 @@
 	const NAV: NavItem[] = [
 		{ href: '/', label: 'Today', icon: 'home' },
 		{ href: '/library', label: 'Library', icon: 'library' },
+		{ href: '/coach', label: 'Coach', icon: 'zap' },
 		{ href: '/metrics', label: 'Metrics', icon: 'chart' }
 	];
 
@@ -106,7 +107,7 @@
 
 		<!-- Mobile tab bar -->
 		<nav
-			class="border-line bg-bg/90 pb-safe fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t backdrop-blur-md lg:hidden"
+			class="border-line bg-bg/90 pb-safe fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t backdrop-blur-md lg:hidden"
 		>
 			{#each NAV as item (item.href)}
 				<a

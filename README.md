@@ -39,6 +39,7 @@ six weeks of history so the metrics pages have something to show.
 | `npm run db:seed` | Populate an empty database with demo data |
 | `npm run db:reset` | Delete the database file |
 | `npm run db:studio` | Drizzle Studio, a browser UI over the tables |
+| `npm run skill:write` | Regenerate `skills/van-damme-session-author/SKILL.md` from the format spec |
 
 Configuration is one variable, in `.env`:
 
@@ -48,16 +49,89 @@ DATABASE_URL=./data/app.db
 
 ---
 
-## The four pages
+## The pages
 
 - **Today** (`/`) — routines due today, ticked off or started from here; streak,
   adherence and a training calendar; what is coming later this week.
 - **Library** (`/library`) — three tabs: sessions, exercises, routines.
+- **Coach** (`/coach`) — describe what you want, get a prompt to paste into any
+  AI chat, paste the answer back to import it. See below.
 - **Metrics** (`/metrics`) — overall volume and consistency, then a per-session
   breakdown down to the pace of each individual step.
 - **Runner** (`/run/[id]`) — full-screen, one-handed. Countdown for timed work, a
   big *Done* button for reps, audio and haptic cues, a screen wake lock, and
   keyboard shortcuts on desktop (`space`, `←`, `→`).
+
+---
+
+## The Coach page
+
+Building a programme by hand is slow. The Coach page has two ways in, chosen
+with the toggle at the top and remembered in the URL (`/coach?mode=import`).
+
+**Ask an AI** — for when you want the prompt written for you:
+
+1. **Describe what you want.** Goal, sport, level, session length, equipment,
+   injuries, which of your exercises to include or avoid, and whether the model
+   may invent new movements or must stick to your library.
+2. **Copy the generated prompt** into ChatGPT, Claude, Gemini — anything. The
+   prompt carries your brief, the names already in your library, the complete
+   file format and a worked example.
+3. **Bring the answer back**, as a file or a paste.
+
+**I have a file** — for when your own agent or script already produced a pack.
+Straight to the importer: drop a `.json` file on it, pick one, or paste. Nothing
+else in the way.
+
+Either way the pack is parsed, validated and **previewed** — what will be
+created, what will be reused from your library, what got renamed — before
+anything is written. Whatever is in the box survives switching between the two
+modes.
+
+The paste box is deliberately forgiving about the envelope and strict about the
+contents: markdown fences, surrounding prose and trailing commas are all
+tolerated, weekday names are accepted in place of numbers, and a missing
+`startDate` defaults to today. When something genuinely does not validate, the
+errors come back with exact paths and a **Copy these errors for the AI** button —
+paste that back into the same chat and it corrects itself.
+
+### The training pack format
+
+The interchange format is **JSON**, not YAML: it needs no parser dependency,
+maps 1:1 onto the existing zod schemas, and has no indentation failure mode —
+which matters when a model writes the file and a clipboard carries it.
+
+```jsonc
+{
+  "format": "van-damme.training-pack",
+  "version": 1,
+  "summary": "…",
+  "exercises": [ /* new movements, with instructions */ ],
+  "sessions":  [ /* name, description, blocks[] → items[] */ ],
+  "routines":  [ /* optional schedule */ ]
+}
+```
+
+Items reference exercises **by name**, not by id — that is what makes the format
+writable by something with no access to this database. On import, names are
+matched case-insensitively against the library, missing ones are created from
+the `exercises` array, and a session whose name is already taken is saved with a
+numeric suffix rather than overwriting anything.
+
+Every shape in `models/pack.ts` is the corresponding domain input schema with
+one field swapped, so all the real rules — lengths, ranges, defaults — are
+inherited rather than restated. The format cannot drift from what the app
+accepts.
+
+### Bring your own agent
+
+`skills/van-damme-session-author/SKILL.md` is the same rules packaged as an
+agent skill: drop it into Claude Code, an agent framework or a custom GPT and
+you can ask for a session in plain language, with no prompt to copy each time.
+The Coach page offers the same file as a download.
+
+It is **generated** from `formatSpec()` in `coach-prompt.ts` — the single source
+the on-page prompt also uses. After changing the format, run `npm run skill:write`.
 
 ---
 
@@ -162,7 +236,8 @@ src/
   lib/
     domain/
       models/                 zod schemas + types — the single source of truth
-      services/               pure logic: recurrence, plan, metrics, dates, scales
+      services/               pure logic: recurrence, plan, metrics, dates, scales,
+                              pack parsing/resolution, coach prompt
     server/
       db/                     drizzle schema, connection, mappers, ids
       repositories/           data access, returns domain models
@@ -172,15 +247,17 @@ src/
     components/
       ui/                     primitives (button, modal, field, stat…)
       charts/                 line, bar, sparkline, heatmap, trend pill
-      exercises/ sessions/ routines/ runner/ metrics/ shared/
+      exercises/ sessions/ routines/ runner/ metrics/ coach/ shared/
   routes/
     +page.svelte              Today
     library/                  sessions · exercises · routines
+    coach/                    prompt builder + pack importer
     metrics/
     run/[id]/                 the workout runner
     api/                      JSON endpoints
 drizzle/                      generated SQL migrations
-scripts/                      migrate · seed · reset (+ alias hooks for plain node)
+skills/                       the agent skill file, generated from the format spec
+scripts/                      migrate · seed · reset · write-skill (+ alias hooks)
 ```
 
 ## Deployment

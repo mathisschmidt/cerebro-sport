@@ -68,6 +68,30 @@ step nearest the surface, in both themes. If you change a chart colour, re-run
 the validator rather than eyeballing it. One series means no legend; axis ticks
 round to clean durations via `$domain/services/scale.ts`.
 
+## The training pack format
+
+`lib/domain/models/pack.ts` defines the import format the Coach page uses. Every
+shape there is derived from a domain input schema (`.omit()` + `.extend()`), so
+constraints are inherited, never restated — keep it that way.
+
+Three pieces share one source of truth:
+
+- `formatSpec()` in `coach-prompt.ts` is the written contract. Its enumerations
+  come from the zod schemas, so a new exercise category appears in the prompt on
+  its own.
+- The on-page prompt and `SKILL.md` both embed `formatSpec()`.
+- `skills/van-damme-session-author/SKILL.md` is **generated**. After changing
+  the format, run `npm run skill:write` and commit the result.
+
+`resolvePack()` is pure and is called from both sides: the Coach page renders
+its preview from it, and `packService` re-runs it server-side against live data
+before writing. Never let the client send a resolved plan for the server to
+apply — send the pack and re-resolve.
+
+The importer writes through `exerciseService`, `sessionService` and
+`routineService`, so an imported session is validated exactly like a hand-built
+one. Do not bypass them for speed.
+
 ## Things that will bite
 
 - **Saving a session replaces its whole block/item tree**, so block and item ids
@@ -81,6 +105,10 @@ round to clean durations via `$domain/services/scale.ts`.
   history.
 - **Occurrence rows only exist for deviations.** `pending` is represented by the
   absence of a row; `resolveOccurrence('pending')` deletes.
+- **Pack exercise names are matched case-insensitively**, and the library's
+  spelling wins over the pack's. An exercise referenced but never declared is
+  created as a stub with a warning — not an error, because rejecting the whole
+  import over a missing description helps nobody.
 
 ## Verifying a change
 

@@ -14,7 +14,8 @@
 		"db:migrate": "node --import ./scripts/register-aliases.mjs scripts/migrate.ts",
 		"db:seed": "node --import ./scripts/register-aliases.mjs scripts/seed.ts",
 		"db:studio": "drizzle-kit studio",
-		"db:reset": "node scripts/reset.ts"
+		"db:reset": "node scripts/reset.ts",
+		"skill:write": "node --import ./scripts/register-aliases.mjs scripts/write-skill.ts"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^5.5.7",

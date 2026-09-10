@@ -6,6 +6,7 @@ import type {
 	ExerciseWithUsage
 } from '$domain/models/exercise.ts';
 import type { MetricsSnapshot, SessionMetrics } from '$domain/models/metrics.ts';
+import type { ImportOptions, ImportResult, Pack } from '$domain/models/pack.ts';
 import type {
 	OccurrenceResolution,
 	RoutineDetail,
@@ -134,6 +135,12 @@ export const api = {
 		finish: (id: string, body: WorkoutFinish) =>
 			request<WorkoutDetail>('POST', `/api/workouts/${id}/finish`, { body }),
 		remove: (id: string) => request<void>('DELETE', `/api/workouts/${id}`)
+	},
+
+	packs: {
+		/** Import a training pack produced by the Coach page. */
+		import: (pack: Pack, options: ImportOptions) =>
+			request<ImportResult>('POST', '/api/packs', { body: { pack, options } })
 	},
 
 	metrics: {
