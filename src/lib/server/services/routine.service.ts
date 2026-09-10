@@ -38,54 +38,56 @@ function toDetail(routine: Routine, sessions: Map<string, SessionSummary>): Rout
 	};
 }
 
-function loadSessions(routines: Routine[]): Map<string, SessionSummary> {
-	return sessionRepository.findSummariesByIds([...new Set(routines.map((r) => r.sessionId))]);
+function loadSessions(userId: string, routines: Routine[]): Map<string, SessionSummary> {
+	return sessionRepository.findSummariesByIds(userId, [
+		...new Set(routines.map((r) => r.sessionId))
+	]);
 }
 
 export const routineService = {
-	list(): RoutineDetail[] {
-		const routines = routineRepository.list();
-		const sessions = loadSessions(routines);
+	list(userId: string): RoutineDetail[] {
+		const routines = routineRepository.list(userId);
+		const sessions = loadSessions(userId, routines);
 		return routines.map((routine) => toDetail(routine, sessions));
 	},
 
-	get(id: string): RoutineDetail {
-		const routine = routineRepository.findById(id);
+	get(userId: string, id: string): RoutineDetail {
+		const routine = routineRepository.findById(userId, id);
 		if (!routine) throw notFound('Routine not found');
-		return toDetail(routine, loadSessions([routine]));
+		return toDetail(routine, loadSessions(userId, [routine]));
 	},
 
-	create(input: RoutineInput): RoutineDetail {
-		assertSessionExists(input.sessionId);
+	create(userId: string, input: RoutineInput): RoutineDetail {
+		assertSessionExists(userId, input.sessionId);
 		assertWindow(input.startDate, input.endDate);
-		const routine = routineRepository.create(input);
-		return toDetail(routine, loadSessions([routine]));
+		const routine = routineRepository.create(userId, input);
+		return toDetail(routine, loadSessions(userId, [routine]));
 	},
 
-	update(id: string, patch: RoutinePatch): RoutineDetail {
-		if (patch.sessionId) assertSessionExists(patch.sessionId);
-		const existing = routineRepository.findById(id);
+	update(userId: string, id: string, patch: RoutinePatch): RoutineDetail {
+		if (patch.sessionId) assertSessionExists(userId, patch.sessionId);
+		const existing = routineRepository.findById(userId, id);
 		if (!existing) throw notFound('Routine not found');
 		assertWindow(patch.startDate ?? existing.startDate, patch.endDate !== undefined ? patch.endDate : existing.endDate);
 
-		const routine = routineRepository.update(id, patch);
+		const routine = routineRepository.update(userId, id, patch);
 		if (!routine) throw notFound('Routine not found');
-		return toDetail(routine, loadSessions([routine]));
+		return toDetail(routine, loadSessions(userId, [routine]));
 	},
 
-	remove(id: string): void {
-		if (!routineRepository.remove(id)) throw notFound('Routine not found');
+	remove(userId: string, id: string): void {
+		if (!routineRepository.remove(userId, id)) throw notFound('Routine not found');
 	},
 
 	/**
 	 * Every occurrence in `[from, to]`, ordered by date then time of day.
 	 */
-	occurrences(from: IsoDate, to: IsoDate): RoutineOccurrence[] {
-		const routines = routineRepository.list();
+	occurrences(userId: string, from: IsoDate, to: IsoDate): RoutineOccurrence[] {
+		const routines = routineRepository.list(userId);
 		if (routines.length === 0) return [];
 
-		const sessions = loadSessions(routines);
-		const records = routineRepository.findOccurrences(from, to);
+		const sessions = loadSessions(userId, routines);
+		const records = routineRepository.findOccurrences(userId, from, to);
 		const byId = new Map(routines.map((routine) => [routine.id, routine]));
 		const emitted = new Set<string>();
 		const result: RoutineOccurrence[] = [];
@@ -132,22 +134,22 @@ export const routineService = {
 	},
 
 	/** The agenda for one day. */
-	day(date: IsoDate = todayIso()): RoutineOccurrence[] {
-		return this.occurrences(date, date);
+	day(userId: string, date: IsoDate = todayIso()): RoutineOccurrence[] {
+		return this.occurrences(userId, date, date);
 	},
 
-	resolve(resolution: OccurrenceResolution): RoutineOccurrence {
-		const routine = routineRepository.findById(resolution.routineId);
+	resolve(userId: string, resolution: OccurrenceResolution): RoutineOccurrence {
+		const routine = routineRepository.findById(userId, resolution.routineId);
 		if (!routine) throw notFound('Routine not found');
 		routineRepository.resolveOccurrence(resolution);
-		const day = this.day(resolution.date).find((o) => o.routineId === resolution.routineId);
+		const day = this.day(userId, resolution.date).find((o) => o.routineId === resolution.routineId);
 		if (!day) throw notFound('Occurrence not found');
 		return day;
 	}
 };
 
-function assertSessionExists(sessionId: string): void {
-	if (!sessionRepository.findSummary(sessionId)) {
+function assertSessionExists(userId: string, sessionId: string): void {
+	if (!sessionRepository.findSummary(userId, sessionId)) {
 		throw validationFailed('That session no longer exists', { sessionId: 'Unknown session' });
 	}
 }

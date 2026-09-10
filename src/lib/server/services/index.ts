@@ -4,3 +4,5 @@ export { routineService } from './routine.service.ts';
 export { workoutService } from './workout.service.ts';
 export { metricsService } from './metrics.service.ts';
 export { packService } from './pack.service.ts';
+export { settingsService } from './settings.service.ts';
+export { adminService } from './admin.service.ts';

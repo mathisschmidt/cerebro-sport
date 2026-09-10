@@ -10,6 +10,7 @@ import type {
 import { db, schema } from '../db/client.ts';
 import { fromMeasure, toWorkout, toWorkoutStep } from '../db/mappers.ts';
 import { newId } from '../db/ids.ts';
+import { ownedBy } from './scope.ts';
 
 const { workouts, workoutSteps } = schema;
 
@@ -35,6 +36,7 @@ function attachSteps(rows: Workout[]): WorkoutDetail[] {
 
 export const workoutRepository = {
 	create(args: {
+		userId: string;
 		sessionId: string;
 		sessionName: string;
 		routineId: string | null;
@@ -46,6 +48,7 @@ export const workoutRepository = {
 			.insert(workouts)
 			.values({
 				id: newId(),
+				userId: args.userId,
 				sessionId: args.sessionId,
 				sessionName: args.sessionName,
 				routineId: args.routineId,
@@ -63,28 +66,32 @@ export const workoutRepository = {
 		return toWorkout(row);
 	},
 
-	findById(id: string): Workout | null {
-		const row = db.select().from(workouts).where(eq(workouts.id, id)).get();
+	findById(userId: string, id: string): Workout | null {
+		const row = db
+			.select()
+			.from(workouts)
+			.where(ownedBy(workouts.userId, userId, eq(workouts.id, id)))
+			.get();
 		return row ? toWorkout(row) : null;
 	},
 
-	findDetail(id: string): WorkoutDetail | null {
-		const workout = this.findById(id);
+	findDetail(userId: string, id: string): WorkoutDetail | null {
+		const workout = this.findById(userId, id);
 		return workout ? (attachSteps([workout])[0] ?? null) : null;
 	},
 
 	/** Most recent unfinished workout, used to offer a resume. */
-	findActive(): Workout | null {
+	findActive(userId: string): Workout | null {
 		const row = db
 			.select()
 			.from(workouts)
-			.where(eq(workouts.status, 'in_progress'))
+			.where(ownedBy(workouts.userId, userId, eq(workouts.status, 'in_progress')))
 			.orderBy(desc(workouts.startedAt))
 			.get();
 		return row ? toWorkout(row) : null;
 	},
 
-	list(query: WorkoutQuery): Workout[] {
+	list(userId: string, query: WorkoutQuery): Workout[] {
 		const filters = [
 			query.sessionId ? eq(workouts.sessionId, query.sessionId) : undefined,
 			query.status ? eq(workouts.status, query.status) : undefined,
@@ -95,7 +102,7 @@ export const workoutRepository = {
 		return db
 			.select()
 			.from(workouts)
-			.where(filters.length > 0 ? and(...filters) : undefined)
+			.where(ownedBy(workouts.userId, userId, ...filters))
 			.orderBy(desc(workouts.startedAt))
 			.limit(query.limit)
 			.offset(query.offset)
@@ -103,14 +110,15 @@ export const workoutRepository = {
 			.map(toWorkout);
 	},
 
-	listDetails(query: WorkoutQuery): WorkoutDetail[] {
-		return attachSteps(this.list(query));
+	listDetails(userId: string, query: WorkoutQuery): WorkoutDetail[] {
+		return attachSteps(this.list(userId, query));
 	},
 
 	/**
 	 * Records a finished step. Idempotent on (workout, stepIndex) so a retried
 	 * request from a flaky phone connection cannot duplicate a log.
 	 */
+	/** Callers must have already established that the workout belongs to the user. */
 	upsertStep(workoutId: string, input: WorkoutStepLogInput): WorkoutStepLog {
 		const planned = fromMeasure(input.plannedMeasure);
 		const values = {
@@ -188,8 +196,12 @@ export const workoutRepository = {
 			.run();
 	},
 
-	finish(id: string, args: { status: 'completed' | 'abandoned'; notes: string }): Workout | null {
-		const current = this.findById(id);
+	finish(
+		userId: string,
+		id: string,
+		args: { status: 'completed' | 'abandoned'; notes: string }
+	): Workout | null {
+		const current = this.findById(userId, id);
 		if (!current) return null;
 
 		// Totals come from the step logs, so a late `finish` call cannot inflate them.
@@ -199,13 +211,14 @@ export const workoutRepository = {
 		const row = db
 			.update(workouts)
 			.set({ status: args.status, notes: args.notes, completedAt, updatedAt: completedAt })
-			.where(eq(workouts.id, id))
+			.where(ownedBy(workouts.userId, userId, eq(workouts.id, id)))
 			.returning()
 			.get();
 		return row ? toWorkout(row) : null;
 	},
 
-	remove(id: string): boolean {
+	remove(userId: string, id: string): boolean {
+		if (!this.findById(userId, id)) return false;
 		return db.transaction((tx) => {
 			tx.delete(workoutSteps).where(eq(workoutSteps.workoutId, id)).run();
 			return tx.delete(workouts).where(eq(workouts.id, id)).run().changes > 0;
@@ -213,10 +226,11 @@ export const workoutRepository = {
 	},
 
 	/** Distinct sessions that appear in history, including deleted ones. */
-	listHistoricSessions(): Array<{ id: string; name: string }> {
+	listHistoricSessions(userId: string): Array<{ id: string; name: string }> {
 		return db
 			.selectDistinct({ id: workouts.sessionId, name: workouts.sessionName })
 			.from(workouts)
+			.where(ownedBy(workouts.userId, userId))
 			.all();
 	}
 };

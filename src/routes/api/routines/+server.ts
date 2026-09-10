@@ -1,10 +1,11 @@
 import { routineInputSchema } from '$domain/models/routine.ts';
 import { routineService } from '$server/services/index.ts';
-import { endpoint, readBody } from '$server/http/respond.ts';
+import { authed, readBody } from '$server/http/respond.ts';
 
-export const GET = endpoint(() => routineService.list());
+export const GET = authed((_event, user) => routineService.list(user.id));
 
-export const POST = endpoint(
-	async ({ request }) => routineService.create(await readBody(request, routineInputSchema)),
+export const POST = authed(
+	async ({ request }, user) =>
+		routineService.create(user.id, await readBody(request, routineInputSchema)),
 	{ status: 201 }
 );

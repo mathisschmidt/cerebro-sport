@@ -21,20 +21,21 @@ import { badRequest, notFound } from '../http/errors.ts';
  * resumable instead of lost.
  */
 export const workoutService = {
-	start(input: WorkoutStart): WorkoutDetail {
-		const session = sessionService.get(input.sessionId);
-		const plan = sessionService.plan(input.sessionId);
+	start(userId: string, input: WorkoutStart): WorkoutDetail {
+		const session = sessionService.get(userId, input.sessionId);
+		const plan = sessionService.plan(userId, input.sessionId);
 		if (plan.steps.length === 0) {
 			throw badRequest('This session has no steps to run');
 		}
 
 		// Only one workout can be in flight; picking up a new one closes the old.
-		const active = workoutRepository.findActive();
+		const active = workoutRepository.findActive(userId);
 		if (active) {
-			workoutRepository.finish(active.id, { status: 'abandoned', notes: active.notes });
+			workoutRepository.finish(userId, active.id, { status: 'abandoned', notes: active.notes });
 		}
 
 		const workout = workoutRepository.create({
+			userId,
 			sessionId: session.id,
 			sessionName: session.name,
 			routineId: input.routineId,
@@ -45,23 +46,23 @@ export const workoutService = {
 		return { ...workout, steps: [] };
 	},
 
-	get(id: string): WorkoutDetail {
-		const workout = workoutRepository.findDetail(id);
+	get(userId: string, id: string): WorkoutDetail {
+		const workout = workoutRepository.findDetail(userId, id);
 		if (!workout) throw notFound('Workout not found');
 		return workout;
 	},
 
 	/** The workout to offer as "resume", if any. */
-	active(): Workout | null {
-		return workoutRepository.findActive();
+	active(userId: string): Workout | null {
+		return workoutRepository.findActive(userId);
 	},
 
-	history(query: WorkoutQuery): Workout[] {
-		return workoutRepository.list(query);
+	history(userId: string, query: WorkoutQuery): Workout[] {
+		return workoutRepository.list(userId, query);
 	},
 
-	logStep(workoutId: string, input: WorkoutStepLogInput): WorkoutStepLog {
-		const workout = workoutRepository.findById(workoutId);
+	logStep(userId: string, workoutId: string, input: WorkoutStepLogInput): WorkoutStepLog {
+		const workout = workoutRepository.findById(userId, workoutId);
 		if (!workout) throw notFound('Workout not found');
 		if (workout.status !== 'in_progress') {
 			throw badRequest('This workout is already finished');
@@ -72,11 +73,14 @@ export const workoutService = {
 		return workoutRepository.upsertStep(workoutId, input);
 	},
 
-	finish(id: string, input: WorkoutFinish): WorkoutDetail {
-		const existing = workoutRepository.findById(id);
+	finish(userId: string, id: string, input: WorkoutFinish): WorkoutDetail {
+		const existing = workoutRepository.findById(userId, id);
 		if (!existing) throw notFound('Workout not found');
 
-		const workout = workoutRepository.finish(id, { status: input.status, notes: input.notes });
+		const workout = workoutRepository.finish(userId, id, {
+			status: input.status,
+			notes: input.notes
+		});
 		if (!workout) throw notFound('Workout not found');
 
 		// Finishing a scheduled workout ticks its occurrence off the calendar.
@@ -89,11 +93,11 @@ export const workoutService = {
 			});
 		}
 
-		return this.get(id);
+		return this.get(userId, id);
 	},
 
-	remove(id: string): void {
-		const workout = workoutRepository.findById(id);
+	remove(userId: string, id: string): void {
+		const workout = workoutRepository.findById(userId, id);
 		if (!workout) throw notFound('Workout not found');
 
 		// Release the calendar tick this workout was holding.
@@ -105,6 +109,6 @@ export const workoutService = {
 				workoutId: null
 			});
 		}
-		workoutRepository.remove(id);
+		workoutRepository.remove(userId, id);
 	}
 };

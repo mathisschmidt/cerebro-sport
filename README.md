@@ -41,6 +41,10 @@ six weeks of history so the metrics pages have something to show.
 | `npm run db:studio` | Drizzle Studio, a browser UI over the tables |
 | `npm run skill:write` | Regenerate `skills/van-damme-session-author/SKILL.md` from the format spec |
 
+Set `BETTER_AUTH_SECRET` before deploying anywhere real — it signs session
+cookies, and there is a development fallback that must not be used in
+production. `ADMIN_USERNAME` and `ADMIN_PASSWORD` override the first-run admin.
+
 Configuration is one variable, in `.env`:
 
 ```
@@ -48,6 +52,31 @@ DATABASE_URL=./data/app.db
 ```
 
 ---
+
+## Accounts
+
+Everything is private by default. A route has to be listed as public in
+`hooks.server.ts` to be reachable signed out, and every training row belongs to
+exactly one account — one athlete's library, sessions, routines and history are
+invisible to everyone else, including other admins.
+
+**First run** creates an admin: `admin` / `admin123`. Change the password, or
+set `ADMIN_USERNAME` and `ADMIN_PASSWORD` before the first boot. If the database
+already held training data, that data is adopted by this account.
+
+**Registration is closed by default.** A fresh instance is not open to whoever
+finds it. An admin can open it from the Admin page, and while it is closed only
+an admin can add accounts. Sign-in is by username — no mail is configured, so
+the address Better Auth requires is synthesised from the username.
+
+**Roles** are `admin` and athlete. Admins additionally get the Admin page: open
+or close registration, add accounts, change roles, and delete accounts. Deleting
+an account permanently deletes everything it owned. An admin cannot delete their
+own account or drop their own admin role, so an instance cannot be locked out.
+
+Auth, sessions and roles are handled by [Better Auth](https://better-auth.com)
+with its username and admin plugins, on the same SQLite database through the
+Drizzle adapter.
 
 ## The pages
 
@@ -58,6 +87,7 @@ DATABASE_URL=./data/app.db
   AI chat, paste the answer back to import it. See below.
 - **Metrics** (`/metrics`) — overall volume and consistency, then a per-session
   breakdown down to the pace of each individual step.
+- **Admin** (`/admin`, admins only) — registration, accounts and roles.
 - **Runner** (`/run/[id]`) — full-screen, one-handed. Countdown for timed work, a
   big *Done* button for reps, audio and haptic cues, a screen wake lock, and
   keyboard shortcuts on desktop (`space`, `←`, `→`).
@@ -250,6 +280,8 @@ src/
       exercises/ sessions/ routines/ runner/ metrics/ coach/ shared/
   routes/
     +page.svelte              Today
+    login/ register/          sign-in, and sign-up when it is open
+    admin/                    accounts, roles, registration
     library/                  sessions · exercises · routines
     coach/                    prompt builder + pack importer
     metrics/

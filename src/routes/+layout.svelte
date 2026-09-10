@@ -4,9 +4,21 @@
 	import Icon, { type IconName } from '$components/ui/Icon.svelte';
 	import Toaster from '$components/ui/Toaster.svelte';
 	import { theme } from '$client/theme.svelte.ts';
+	import { authClient } from '$client/auth.ts';
+	import { goto } from '$app/navigation';
 	import type { Snippet } from 'svelte';
+	import type { LayoutData } from './$types.ts';
 
-	let { children }: { children: Snippet } = $props();
+	let { children, data }: { children: Snippet; data: LayoutData } = $props();
+
+	let signingOut = $state(false);
+
+	async function signOut() {
+		signingOut = true;
+		await authClient.signOut();
+		await goto('/login', { invalidateAll: true });
+		signingOut = false;
+	}
 
 	interface NavItem {
 		href: string;
@@ -25,8 +37,15 @@
 		return href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(href);
 	}
 
-	/** The runner takes the whole screen — chrome would only get in the way. */
-	const immersive = $derived(page.url.pathname.startsWith('/run/'));
+	/**
+	 * The runner takes the whole screen, and the sign-in screens have no app to
+	 * navigate yet — both render without any chrome.
+	 */
+	const immersive = $derived(
+		page.url.pathname.startsWith('/run/') ||
+			page.url.pathname === '/login' ||
+			page.url.pathname === '/register'
+	);
 </script>
 
 <svelte:head>
@@ -67,7 +86,21 @@
 				{/each}
 			</nav>
 
-			<div class="mt-auto">
+			<div class="mt-auto flex flex-col gap-0.5">
+				{#if data.user?.role === 'admin'}
+					<a
+						href="/admin"
+						class="flex h-10 items-center gap-3 rounded-[10px] px-3 text-sm font-medium transition-colors
+						{isActive('/admin')
+							? 'bg-accent-soft text-accent'
+							: 'text-ink-muted hover:bg-surface hover:text-ink'}"
+						aria-current={isActive('/admin') ? 'page' : undefined}
+					>
+						<Icon name="settings" size={18} />
+						Admin
+					</a>
+				{/if}
+
 				<button
 					type="button"
 					class="text-ink-muted hover:bg-surface hover:text-ink flex h-10 w-full items-center gap-3 rounded-[10px] px-3 text-sm font-medium transition-colors"
@@ -76,6 +109,34 @@
 					<Icon name={theme.current === 'dark' ? 'sun' : 'moon'} size={18} />
 					{theme.current === 'dark' ? 'Light mode' : 'Dark mode'}
 				</button>
+
+				{#if data.user}
+					<div class="border-line mt-1 flex items-center gap-2 border-t px-1 pt-2">
+						<span
+							class="bg-surface-sunken text-ink-muted grid size-8 shrink-0 place-items-center rounded-full text-[12px] font-semibold uppercase"
+						>
+							{data.user.username.slice(0, 2)}
+						</span>
+						<span class="min-w-0 flex-1">
+							<span class="text-ink block truncate text-[13px] font-medium">
+								{data.user.username}
+							</span>
+							{#if data.user.role === 'admin'}
+								<span class="text-ink-subtle block text-[11px]">Admin</span>
+							{/if}
+						</span>
+						<button
+							type="button"
+							class="text-ink-subtle hover:text-ink hover:bg-surface grid size-8 shrink-0 place-items-center rounded-lg transition-colors disabled:opacity-50"
+							onclick={signOut}
+							disabled={signingOut}
+							aria-label="Sign out"
+							title="Sign out"
+						>
+							<Icon name="signOut" size={17} />
+						</button>
+					</div>
+				{/if}
 			</div>
 		</aside>
 
@@ -90,14 +151,38 @@
 					</span>
 					<span class="text-sm font-semibold">Van&nbsp;Damme</span>
 				</a>
-				<button
-					type="button"
-					class="text-ink-muted hover:text-ink -mr-2 grid size-9 place-items-center rounded-lg"
-					onclick={() => theme.toggle()}
-					aria-label="Switch theme"
-				>
-					<Icon name={theme.current === 'dark' ? 'sun' : 'moon'} size={18} />
-				</button>
+				<div class="-mr-2 flex items-center">
+					{#if data.user?.role === 'admin'}
+						<a
+							href="/admin"
+							class="grid size-9 place-items-center rounded-lg {isActive('/admin')
+								? 'text-accent'
+								: 'text-ink-muted hover:text-ink'}"
+							aria-label="Admin"
+						>
+							<Icon name="settings" size={18} />
+						</a>
+					{/if}
+					<button
+						type="button"
+						class="text-ink-muted hover:text-ink grid size-9 place-items-center rounded-lg"
+						onclick={() => theme.toggle()}
+						aria-label="Switch theme"
+					>
+						<Icon name={theme.current === 'dark' ? 'sun' : 'moon'} size={18} />
+					</button>
+					{#if data.user}
+						<button
+							type="button"
+							class="text-ink-muted hover:text-ink grid size-9 place-items-center rounded-lg disabled:opacity-50"
+							onclick={signOut}
+							disabled={signingOut}
+							aria-label="Sign out"
+						>
+							<Icon name="signOut" size={18} />
+						</button>
+					{/if}
+				</div>
 			</header>
 
 			<main class="mx-auto w-full max-w-5xl flex-1 px-4 pt-4 pb-28 sm:px-6 lg:px-8 lg:py-8">

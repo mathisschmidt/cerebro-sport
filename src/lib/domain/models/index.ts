@@ -6,3 +6,5 @@ export * from './plan.ts';
 export * from './routine.ts';
 export * from './workout.ts';
 export * from './metrics.ts';
+export * from './user.ts';
+export * from './settings.ts';

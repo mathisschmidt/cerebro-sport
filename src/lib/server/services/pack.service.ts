@@ -19,23 +19,23 @@ import { sessionService } from './session.service.ts';
  * exactly the same rules as one built by hand in the editor.
  */
 
-function library() {
+function library(userId: string) {
 	return {
 		existingExercises: exerciseRepository
-			.list({ limit: 500, offset: 0 })
+			.list(userId, { limit: 500, offset: 0 })
 			.items.map((exercise) => ({ id: exercise.id, name: exercise.name })),
-		existingSessions: sessionRepository.listAllIdsAndNames()
+		existingSessions: sessionRepository.listAllIdsAndNames(userId)
 	};
 }
 
 export const packService = {
 	/** What importing this pack would do, resolved against the current library. */
-	plan(pack: Pack, options?: Partial<ImportOptions>): PackPlan {
-		return resolvePack(pack, { ...library(), today: todayIso(), options });
+	plan(userId: string, pack: Pack, options?: Partial<ImportOptions>): PackPlan {
+		return resolvePack(pack, { ...library(userId), today: todayIso(), options });
 	},
 
-	apply(pack: Pack, options: ImportOptions): ImportResult {
-		const plan = this.plan(pack, options);
+	apply(userId: string, pack: Pack, options: ImportOptions): ImportResult {
+		const plan = this.plan(userId, pack, options);
 
 		if (!plan.importable) {
 			throw validationFailed(
@@ -67,13 +67,13 @@ export const packService = {
 			}
 
 			try {
-				const created = exerciseService.create(entry.input);
+				const created = exerciseService.create(userId, entry.input);
 				exerciseIdByName.set(packKey(created.name), created.id);
 				result.exercisesCreated += 1;
 			} catch (error) {
 				// Lost a race with another tab, or a name that differs only by case:
 				// reuse whatever is actually there rather than failing the import.
-				const existing = exerciseRepository.findByName(entry.input.name);
+				const existing = exerciseRepository.findByName(userId, entry.input.name);
 				if (!existing) throw error;
 				exerciseIdByName.set(packKey(existing.name), existing.id);
 				result.exercisesReused += 1;
@@ -83,7 +83,7 @@ export const packService = {
 		// 2. Sessions.
 		const sessionIdByName = new Map<string, string>();
 		for (const entry of plan.sessions) {
-			const created = sessionService.create(toSessionInput(entry, exerciseIdByName));
+			const created = sessionService.create(userId, toSessionInput(entry, exerciseIdByName));
 			sessionIdByName.set(packKey(created.name), created.id);
 			result.sessionsCreated.push(created.name);
 			if (entry.renamed) result.renamed.push({ from: entry.originalName, to: entry.name });
@@ -91,7 +91,7 @@ export const packService = {
 
 		// 3. Routines, pointing at whichever session they named.
 		const existingSessions = new Map(
-			sessionRepository.listAllIdsAndNames().map((session) => [packKey(session.name), session.id])
+			sessionRepository.listAllIdsAndNames(userId).map((session) => [packKey(session.name), session.id])
 		);
 
 		for (const entry of plan.routines) {
@@ -104,7 +104,7 @@ export const packService = {
 				continue;
 			}
 
-			routineService.create({
+			routineService.create(userId, {
 				name: entry.name,
 				sessionId,
 				recurrence: entry.source.recurrence,

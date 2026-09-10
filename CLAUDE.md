@@ -18,6 +18,18 @@ routes → services → repositories → db
 lib/domain is imported by everything and imports nothing above it
 ```
 
+**Every owned table is scoped by `userId`, and that is threaded explicitly.**
+Repository and service methods take the owner as their first argument — there is
+no ambient "current user". Build every `where` on an owned table with `ownedBy`
+(`repositories/scope.ts`) so an unscoped query is visible at a glance. The owned
+tables are `exercises`, `sessions`, `routines` and `workouts`; their children
+(`session_blocks`, `session_items`, `routine_occurrences`, `workout_steps`) are
+only ever reached through an already-scoped parent.
+
+Endpoints use `authed()` / `adminOnly()` from `http/respond.ts`, which hand the
+handler a `SessionUser`; page loads use `requireUser` / `requireAdmin` from
+`http/session.ts`. Do not read `locals.user` directly and hope it is there.
+
 - Routes contain no business logic. They validate, call one service, return.
 - Services own invariants and throw `AppError` (`$server/http/errors.ts`).
   They never import from `@sveltejs/kit` — that is what keeps them testable and
@@ -92,6 +104,28 @@ The importer writes through `exerciseService`, `sessionService` and
 `routineService`, so an imported session is validated exactly like a hand-built
 one. Do not bypass them for speed.
 
+## Auth
+
+Better Auth owns accounts, sessions, password hashing and roles. Its tables live
+in `db/auth-schema.ts`, which is **generated** — after changing the plugins in
+`auth/auth.ts`, re-run the generate command in that file's header and then
+`npm run db:generate`.
+
+- `auth/auth.ts` imports nothing from SvelteKit, so `scripts/` can use it.
+- Sign-in is by **username**; the email column is synthesised by
+  `emailForUsername` because no mail is configured. If you ever add real email,
+  that function is the one place to change.
+- **Public sign-up is a runtime setting**, enforced by the `before` hook in
+  `auth.ts` — not by `disableSignUp`. The hook lets sign-up through when the
+  instance has no users at all: that is what creates the first admin at boot and
+  is the recovery path if every account is deleted.
+- Admin actions go through Better Auth's admin API with the caller's headers, so
+  it does the authorising. `adminService` adds the guards it does not have
+  (no deleting yourself, no removing your own admin role).
+- **Deleting a user must purge their data.** That happens in the Better Auth
+  `user.delete.after` hook via `purgeUserData`, because the owned tables carry no
+  foreign key to `user` — see the comment on `owner` in `schema.ts` for why.
+
 ## Things that will bite
 
 - **Saving a session replaces its whole block/item tree**, so block and item ids
@@ -105,6 +139,13 @@ one. Do not bypass them for speed.
   history.
 - **Occurrence rows only exist for deviations.** `pending` is represented by the
   absence of a row; `resolveOccurrence('pending')` deletes.
+- **Cross-account reads return 404, not 403.** Scoping happens in the `where`
+  clause, so another user's row is simply not found. Keep it that way — a 403
+  would confirm the row exists.
+- **`user_id` has a `DEFAULT ''` in the database but not in the drizzle schema.**
+  The default exists only so migration `0001` could add the column to a populated
+  table; `claimOrphanRows` adopts those rows at first boot. Inserts must always
+  state an owner.
 - **Pack exercise names are matched case-insensitively**, and the library's
   spelling wins over the pack's. An exercise referenced but never declared is
   created as a stub with a warning — not an error, because rejecting the whole

@@ -9,6 +9,7 @@ import type {
 import { db, schema } from '../db/client.ts';
 import { fromRecurrence, toRoutine } from '../db/mappers.ts';
 import { newId } from '../db/ids.ts';
+import { ownedBy } from './scope.ts';
 
 const { routines, routineOccurrences } = schema;
 
@@ -33,42 +34,48 @@ function toRowValues(input: RoutineInput) {
 }
 
 export const routineRepository = {
-	list(options: { activeOnly?: boolean } = {}): Routine[] {
+	list(userId: string, options: { activeOnly?: boolean } = {}): Routine[] {
 		const rows = db
 			.select()
 			.from(routines)
-			.where(options.activeOnly ? eq(routines.active, true) : undefined)
+			.where(
+				ownedBy(routines.userId, userId, options.activeOnly ? eq(routines.active, true) : undefined)
+			)
 			.orderBy(asc(routines.timeOfDay), asc(routines.name))
 			.all();
 		return rows.map(toRoutine);
 	},
 
-	findById(id: string): Routine | null {
-		const row = db.select().from(routines).where(eq(routines.id, id)).get();
+	findById(userId: string, id: string): Routine | null {
+		const row = db
+			.select()
+			.from(routines)
+			.where(ownedBy(routines.userId, userId, eq(routines.id, id)))
+			.get();
 		return row ? toRoutine(row) : null;
 	},
 
-	findBySessionId(sessionId: string): Routine[] {
+	findBySessionId(userId: string, sessionId: string): Routine[] {
 		return db
 			.select()
 			.from(routines)
-			.where(eq(routines.sessionId, sessionId))
+			.where(ownedBy(routines.userId, userId, eq(routines.sessionId, sessionId)))
 			.all()
 			.map(toRoutine);
 	},
 
-	create(input: RoutineInput): Routine {
+	create(userId: string, input: RoutineInput): Routine {
 		const now = new Date().toISOString();
 		const row = db
 			.insert(routines)
-			.values({ id: newId(), ...toRowValues(input), createdAt: now, updatedAt: now })
+			.values({ id: newId(), userId, ...toRowValues(input), createdAt: now, updatedAt: now })
 			.returning()
 			.get();
 		return toRoutine(row);
 	},
 
-	update(id: string, patch: RoutinePatch): Routine | null {
-		const current = this.findById(id);
+	update(userId: string, id: string, patch: RoutinePatch): Routine | null {
+		const current = this.findById(userId, id);
 		if (!current) return null;
 		const merged: RoutineInput = {
 			name: patch.name ?? current.name,
@@ -82,13 +89,14 @@ export const routineRepository = {
 		const row = db
 			.update(routines)
 			.set({ ...toRowValues(merged), updatedAt: new Date().toISOString() })
-			.where(eq(routines.id, id))
+			.where(ownedBy(routines.userId, userId, eq(routines.id, id)))
 			.returning()
 			.get();
 		return row ? toRoutine(row) : null;
 	},
 
-	remove(id: string): boolean {
+	remove(userId: string, id: string): boolean {
+		if (!this.findById(userId, id)) return false;
 		return db.transaction((tx) => {
 			tx.delete(routineOccurrences).where(eq(routineOccurrences.routineId, id)).run();
 			return tx.delete(routines).where(eq(routines.id, id)).run().changes > 0;
@@ -96,12 +104,21 @@ export const routineRepository = {
 	},
 
 	/** Recorded deviations in a date range, keyed `routineId|date`. */
-	findOccurrences(from: IsoDate, to: IsoDate): Map<string, OccurrenceRecord> {
+	findOccurrences(userId: string, from: IsoDate, to: IsoDate): Map<string, OccurrenceRecord> {
 		const rows = db
-			.select()
+			.select({ occurrence: routineOccurrences })
 			.from(routineOccurrences)
-			.where(and(gte(routineOccurrences.date, from), lte(routineOccurrences.date, to)))
-			.all();
+			.innerJoin(routines, eq(routineOccurrences.routineId, routines.id))
+			.where(
+				ownedBy(
+					routines.userId,
+					userId,
+					and(gte(routineOccurrences.date, from), lte(routineOccurrences.date, to))
+				)
+			)
+			.all()
+			.map((joined) => joined.occurrence);
+
 		return new Map(
 			rows.map((row) => [
 				`${row.routineId}|${row.date}`,
@@ -116,14 +133,15 @@ export const routineRepository = {
 		);
 	},
 
-	findOccurrencesForRoutines(routineIds: string[]): OccurrenceRecord[] {
+	findOccurrencesForRoutines(userId: string, routineIds: string[]): OccurrenceRecord[] {
 		if (routineIds.length === 0) return [];
 		return db
-			.select()
+			.select({ occurrence: routineOccurrences })
 			.from(routineOccurrences)
-			.where(inArray(routineOccurrences.routineId, routineIds))
+			.innerJoin(routines, eq(routineOccurrences.routineId, routines.id))
+			.where(ownedBy(routines.userId, userId, inArray(routineOccurrences.routineId, routineIds)))
 			.all()
-			.map((row) => ({
+			.map(({ occurrence: row }) => ({
 				routineId: row.routineId,
 				date: row.date,
 				status: row.status as 'completed' | 'skipped',
@@ -133,6 +151,7 @@ export const routineRepository = {
 	},
 
 	/** Upserts a deviation; `pending` clears the row so absence stays the default. */
+	/** Callers must have already established that the routine belongs to the user. */
 	resolveOccurrence(resolution: OccurrenceResolution): void {
 		if (resolution.status === 'pending') {
 			db.delete(routineOccurrences)

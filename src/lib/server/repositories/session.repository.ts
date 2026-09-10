@@ -13,6 +13,7 @@ import { db, schema, type DbExecutor } from '../db/client.ts';
 import { toSessionBlock, toSessionItem } from '../db/mappers.ts';
 import { newId } from '../db/ids.ts';
 import { exerciseRepository } from './exercise.repository.ts';
+import { ownedBy } from './scope.ts';
 
 const { sessions, sessionBlocks, sessionItems } = schema;
 
@@ -107,11 +108,12 @@ function writeStructure(tx: DbExecutor, sessionId: string, input: SessionInput):
 }
 
 export const sessionRepository = {
-	list(query: PageQuery): Page<SessionSummary> {
+	list(userId: string, query: PageQuery): Page<SessionSummary> {
 		const term = query.search ? `%${query.search}%` : null;
-		const filter = term
+		const search = term
 			? or(like(sessions.name, term), like(sessions.description, term))
 			: undefined;
+		const filter = ownedBy(sessions.userId, userId, search);
 
 		const rows = db
 			.select()
@@ -135,27 +137,39 @@ export const sessionRepository = {
 		};
 	},
 
-	findSummary(id: string): SessionSummary | null {
-		const row = db.select().from(sessions).where(eq(sessions.id, id)).get();
+	findSummary(userId: string, id: string): SessionSummary | null {
+		const row = db
+			.select()
+			.from(sessions)
+			.where(ownedBy(sessions.userId, userId, eq(sessions.id, id)))
+			.get();
 		if (!row) return null;
 		return toSummary(row, loadStructures([id]).get(id) ?? []);
 	},
 
-	findSummariesByIds(ids: string[]): Map<string, SessionSummary> {
+	findSummariesByIds(userId: string, ids: string[]): Map<string, SessionSummary> {
 		if (ids.length === 0) return new Map();
-		const rows = db.select().from(sessions).where(inArray(sessions.id, ids)).all();
+		const rows = db
+			.select()
+			.from(sessions)
+			.where(ownedBy(sessions.userId, userId, inArray(sessions.id, ids)))
+			.all();
 		const structures = loadStructures(rows.map((row) => row.id));
 		return new Map(rows.map((row) => [row.id, toSummary(row, structures.get(row.id) ?? [])]));
 	},
 
 	/** Full tree with exercises resolved — what the editor and runner need. */
-	findDetail(id: string): SessionDetail | null {
-		const row = db.select().from(sessions).where(eq(sessions.id, id)).get();
+	findDetail(userId: string, id: string): SessionDetail | null {
+		const row = db
+			.select()
+			.from(sessions)
+			.where(ownedBy(sessions.userId, userId, eq(sessions.id, id)))
+			.get();
 		if (!row) return null;
 
 		const blocks = loadStructures([id]).get(id) ?? [];
 		const exerciseIds = [...new Set(blocks.flatMap((block) => block.items.map((i) => i.exerciseId)))];
-		const exercises = exerciseRepository.findManyByIds(exerciseIds);
+		const exercises = exerciseRepository.findManyByIds(userId, exerciseIds);
 
 		const detailBlocks: SessionBlockDetail[] = blocks.map((block) => ({
 			...block,
@@ -170,16 +184,23 @@ export const sessionRepository = {
 		return { ...toSummary(row, blocks), blocks: detailBlocks };
 	},
 
-	create(input: SessionInput): SessionDetail {
+	create(userId: string, input: SessionInput): SessionDetail {
 		const id = newId();
 		const now = new Date().toISOString();
 		db.transaction((tx) => {
 			tx.insert(sessions)
-				.values({ id, name: input.name, description: input.description, createdAt: now, updatedAt: now })
+				.values({
+					id,
+					userId,
+					name: input.name,
+					description: input.description,
+					createdAt: now,
+					updatedAt: now
+				})
 				.run();
 			writeStructure(tx, id, input);
 		});
-		return this.findDetail(id) as SessionDetail;
+		return this.findDetail(userId, id) as SessionDetail;
 	},
 
 	/**
@@ -187,8 +208,12 @@ export const sessionRepository = {
 	 * as a unit, so a delete-and-rewrite is simpler and safer than diffing —
 	 * at the cost of new ids, which is why workouts snapshot their plan.
 	 */
-	replace(id: string, input: SessionInput): SessionDetail | null {
-		const exists = db.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, id)).get();
+	replace(userId: string, id: string, input: SessionInput): SessionDetail | null {
+		const exists = db
+			.select({ id: sessions.id })
+			.from(sessions)
+			.where(ownedBy(sessions.userId, userId, eq(sessions.id, id)))
+			.get();
 		if (!exists) return null;
 
 		db.transaction((tx) => {
@@ -212,10 +237,11 @@ export const sessionRepository = {
 			writeStructure(tx, id, input);
 		});
 
-		return this.findDetail(id);
+		return this.findDetail(userId, id);
 	},
 
-	remove(id: string): boolean {
+	remove(userId: string, id: string): boolean {
+		if (!this.findSummary(userId, id)) return false;
 		return db.transaction((tx) => {
 			const blockIds = tx
 				.select({ id: sessionBlocks.id })
@@ -231,10 +257,11 @@ export const sessionRepository = {
 		});
 	},
 
-	listAllIdsAndNames(): Array<{ id: string; name: string }> {
+	listAllIdsAndNames(userId: string): Array<{ id: string; name: string }> {
 		return db
 			.select({ id: sessions.id, name: sessions.name })
 			.from(sessions)
+			.where(ownedBy(sessions.userId, userId))
 			.orderBy(asc(sessions.name))
 			.all();
 	}

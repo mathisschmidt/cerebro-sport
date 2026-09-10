@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { ensureBootstrapped } from '../src/lib/server/auth/bootstrap.ts';
 import { db, schema } from '../src/lib/server/db/client.ts';
 import { newId } from '../src/lib/server/db/ids.ts';
 import { exerciseService } from '../src/lib/server/services/exercise.service.ts';
@@ -260,8 +261,14 @@ function stepDurationMs(step: PlanStep, runIndex: number, seed: number): number 
 	return Math.round(base * improvement * noise);
 }
 
-function seedHistory(sessionId: string, sessionName: string, routineId: string, dates: string[]): number {
-	const detail = sessionService.get(sessionId);
+function seedHistory(
+	userId: string,
+	sessionId: string,
+	sessionName: string,
+	routineId: string,
+	dates: string[]
+): number {
+	const detail = sessionService.get(userId, sessionId);
 	const plan = buildPlan(detail);
 	let written = 0;
 
@@ -320,6 +327,7 @@ function seedHistory(sessionId: string, sessionName: string, routineId: string, 
 			tx.insert(schema.workouts)
 				.values({
 					id: workoutId,
+					userId,
 					sessionId,
 					sessionName,
 					routineId,
@@ -360,7 +368,10 @@ function seedHistory(sessionId: string, sessionName: string, routineId: string, 
 	return written;
 }
 
-function main(): void {
+async function main(): Promise<void> {
+	// The seed belongs to somebody, so the admin has to exist first.
+	const { adminId } = await ensureBootstrapped();
+
 	const existing = db.get<{ count: number }>(sql`select count(*) as count from exercises`);
 	if ((existing?.count ?? 0) > 0) {
 		console.log('Database already has data — nothing seeded. Run `npm run db:reset` first to start over.');
@@ -369,12 +380,12 @@ function main(): void {
 
 	const byName = new Map<string, string>();
 	for (const input of EXERCISES) {
-		const created = exerciseService.create(input);
+		const created = exerciseService.create(adminId, input);
 		byName.set(created.name, created.id);
 	}
 	console.log(`Created ${byName.size} exercises.`);
 
-	const sessions = sessionsFor(byName).map((input) => sessionService.create(input));
+	const sessions = sessionsFor(byName).map((input) => sessionService.create(adminId, input));
 	console.log(`Created ${sessions.length} sessions.`);
 
 	const today = todayIso();
@@ -384,7 +395,7 @@ function main(): void {
 	if (!morning || !strength || !sprints) throw new Error('Seed sessions missing');
 
 	const routines = [
-		routineService.create({
+		routineService.create(adminId, {
 			name: 'Morning conditioning',
 			sessionId: morning.id,
 			recurrence: { type: 'weekly', interval: 1, weekdays: [1, 3, 5] },
@@ -393,7 +404,7 @@ function main(): void {
 			timeOfDay: '07:30',
 			active: true
 		}),
-		routineService.create({
+		routineService.create(adminId, {
 			name: 'Strength day',
 			sessionId: strength.id,
 			recurrence: { type: 'weekly', interval: 1, weekdays: [2, 6] },
@@ -402,7 +413,7 @@ function main(): void {
 			timeOfDay: '18:00',
 			active: true
 		}),
-		routineService.create({
+		routineService.create(adminId, {
 			name: 'Track intervals',
 			sessionId: sprints.id,
 			recurrence: { type: 'weekly', interval: 2, weekdays: [4] },
@@ -428,7 +439,7 @@ function main(): void {
 			if (routineOccursOn(routine, date)) dates.push(date);
 		}
 
-		workouts += seedHistory(session.id, session.name, routine.id, dates);
+		workouts += seedHistory(adminId, session.id, session.name, routine.id, dates);
 	}
 
 	console.log(`Logged ${workouts} past workouts.`);

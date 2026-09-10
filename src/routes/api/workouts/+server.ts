@@ -1,10 +1,13 @@
 import { workoutQuerySchema, workoutStartSchema } from '$domain/models/workout.ts';
 import { workoutService } from '$server/services/index.ts';
-import { endpoint, readBody, readQuery } from '$server/http/respond.ts';
+import { authed, readBody, readQuery } from '$server/http/respond.ts';
 
-export const GET = endpoint(({ url }) => workoutService.history(readQuery(url, workoutQuerySchema)));
+export const GET = authed(({ url }, user) =>
+	workoutService.history(user.id, readQuery(url, workoutQuerySchema))
+);
 
-export const POST = endpoint(
-	async ({ request }) => workoutService.start(await readBody(request, workoutStartSchema)),
+export const POST = authed(
+	async ({ request }, user) =>
+		workoutService.start(user.id, await readBody(request, workoutStartSchema)),
 	{ status: 201 }
 );

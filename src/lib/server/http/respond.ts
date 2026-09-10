@@ -1,7 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 import { z } from 'zod';
+import type { SessionUser } from '$domain/models/user.ts';
 import { AppError, isAppError, validationFailed } from './errors.ts';
+import { requireAdmin, requireUser } from './session.ts';
 
 /**
  * One request/response contract for every endpoint: validate with a zod schema,
@@ -74,6 +76,26 @@ export function endpoint<T>(
 			return errorResponse(error);
 		}
 	};
+}
+
+/**
+ * An endpoint that needs a signed-in user. The user is handed to the handler as
+ * a second argument, so no route has to remember to read `locals` or to check
+ * for absence.
+ */
+export function authed<T>(
+	handler: (event: Parameters<RequestHandler>[0], user: SessionUser) => Promise<T> | T,
+	options: { status?: number } = {}
+): RequestHandler {
+	return endpoint((event) => handler(event, requireUser(event.locals)), options);
+}
+
+/** As `authed`, but 403s anyone who is not an admin. */
+export function adminOnly<T>(
+	handler: (event: Parameters<RequestHandler>[0], user: SessionUser) => Promise<T> | T,
+	options: { status?: number } = {}
+): RequestHandler {
+	return endpoint((event) => handler(event, requireAdmin(event.locals)), options);
 }
 
 export function errorResponse(error: unknown): Response {

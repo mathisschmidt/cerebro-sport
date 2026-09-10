@@ -8,9 +8,9 @@ import { sessionRepository } from '../repositories/session.repository.ts';
 import { conflict, notFound, validationFailed } from '../http/errors.ts';
 
 /** Every exercise referenced by the session must exist before it is written. */
-function assertExercisesExist(input: SessionInput): void {
+function assertExercisesExist(userId: string, input: SessionInput): void {
 	const ids = [...new Set(input.blocks.flatMap((block) => block.items.map((i) => i.exerciseId)))];
-	const found = exerciseRepository.findManyByIds(ids);
+	const found = exerciseRepository.findManyByIds(userId, ids);
 	const missing = ids.filter((id) => !found.has(id));
 	if (missing.length > 0) {
 		throw validationFailed('Some exercises no longer exist', { exerciseIds: missing.join(', ') });
@@ -18,41 +18,41 @@ function assertExercisesExist(input: SessionInput): void {
 }
 
 export const sessionService = {
-	list(query: PageQuery): Page<SessionSummary> {
-		return sessionRepository.list(query);
+	list(userId: string, query: PageQuery): Page<SessionSummary> {
+		return sessionRepository.list(userId, query);
 	},
 
-	get(id: string): SessionDetail {
-		const session = sessionRepository.findDetail(id);
+	get(userId: string, id: string): SessionDetail {
+		const session = sessionRepository.findDetail(userId, id);
 		if (!session) throw notFound('Session not found');
 		return session;
 	},
 
 	/** The runnable, flattened form — also what gets snapshotted onto a workout. */
-	plan(id: string): SessionPlan {
-		return buildPlan(this.get(id));
+	plan(userId: string, id: string): SessionPlan {
+		return buildPlan(this.get(userId, id));
 	},
 
-	create(input: SessionInput): SessionDetail {
-		assertExercisesExist(input);
-		return sessionRepository.create(input);
+	create(userId: string, input: SessionInput): SessionDetail {
+		assertExercisesExist(userId, input);
+		return sessionRepository.create(userId, input);
 	},
 
-	update(id: string, input: SessionInput): SessionDetail {
-		assertExercisesExist(input);
-		const updated = sessionRepository.replace(id, input);
+	update(userId: string, id: string, input: SessionInput): SessionDetail {
+		assertExercisesExist(userId, input);
+		const updated = sessionRepository.replace(userId, id, input);
 		if (!updated) throw notFound('Session not found');
 		return updated;
 	},
 
-	remove(id: string): void {
+	remove(userId: string, id: string): void {
 		// Cascading would silently delete the user's schedule; make it explicit.
-		const routines = routineRepository.findBySessionId(id);
+		const routines = routineRepository.findBySessionId(userId, id);
 		if (routines.length > 0) {
 			throw conflict(
 				`This session is scheduled by ${routines.length} routine${routines.length > 1 ? 's' : ''}. Delete ${routines.length > 1 ? 'them' : 'it'} first.`
 			);
 		}
-		if (!sessionRepository.remove(id)) throw notFound('Session not found');
+		if (!sessionRepository.remove(userId, id)) throw notFound('Session not found');
 	}
 };

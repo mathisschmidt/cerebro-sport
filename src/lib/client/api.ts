@@ -7,6 +7,8 @@ import type {
 } from '$domain/models/exercise.ts';
 import type { MetricsSnapshot, SessionMetrics } from '$domain/models/metrics.ts';
 import type { ImportOptions, ImportResult, Pack } from '$domain/models/pack.ts';
+import type { AppSettings, AppSettingsPatch } from '$domain/models/settings.ts';
+import type { CreateUserInput, ManagedUser, SetRoleInput } from '$domain/models/user.ts';
 import type {
 	OccurrenceResolution,
 	RoutineDetail,
@@ -135,6 +137,20 @@ export const api = {
 		finish: (id: string, body: WorkoutFinish) =>
 			request<WorkoutDetail>('POST', `/api/workouts/${id}/finish`, { body }),
 		remove: (id: string) => request<void>('DELETE', `/api/workouts/${id}`)
+	},
+
+	settings: {
+		get: (fetch?: FetchLike) => request<AppSettings>('GET', '/api/settings', { fetch }),
+		update: (body: AppSettingsPatch) => request<AppSettings>('PATCH', '/api/settings', { body })
+	},
+
+	admin: {
+		users: (fetch?: FetchLike) => request<ManagedUser[]>('GET', '/api/admin/users', { fetch }),
+		createUser: (body: CreateUserInput) =>
+			request<ManagedUser>('POST', '/api/admin/users', { body }),
+		setRole: (body: SetRoleInput) => request<ManagedUser[]>('PATCH', '/api/admin/users', { body }),
+		removeUser: (userId: string) =>
+			request<void>('DELETE', '/api/admin/users', { body: { userId } })
 	},
 
 	packs: {

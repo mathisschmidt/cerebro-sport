@@ -2,6 +2,13 @@ import { relations, sql } from 'drizzle-orm';
 import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /**
+ * Better Auth owns its own tables. Re-exporting them here is what puts them in
+ * front of drizzle-kit for migrations and in the drizzle instance the auth
+ * adapter is handed.
+ */
+export * from './auth-schema.ts';
+
+/**
  * SQLite schema, one table per domain concept.
  *
  * Two deliberate choices worth knowing about:
@@ -11,6 +18,17 @@ import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-or
  *    a session is later edited, which is also why they hold no foreign key to
  *    the session.
  */
+
+/**
+ * Owner of a row. Deliberately no foreign key to `user`: SQLite refuses to add
+ * a referencing column with a non-null default to a table that already has
+ * rows, and that default is what lets an existing database migrate without
+ * losing its data (see `0001` and `claimOrphanRows`). A user's data is removed
+ * by `purgeUserData` on the Better Auth delete hook instead.
+ */
+const owner = {
+	userId: text('user_id').notNull()
+};
 
 const timestamps = {
 	createdAt: text('created_at')
@@ -25,6 +43,7 @@ export const exercises = sqliteTable(
 	'exercises',
 	{
 		id: text('id').primaryKey(),
+		...owner,
 		name: text('name').notNull(),
 		description: text('description').notNull().default(''),
 		instructions: text('instructions').notNull().default(''),
@@ -36,7 +55,9 @@ export const exercises = sqliteTable(
 		...timestamps
 	},
 	(table) => [
-		uniqueIndex('exercises_name_unique').on(table.name),
+		// Names are unique per athlete, not globally.
+		uniqueIndex('exercises_user_name_unique').on(table.userId, table.name),
+		index('exercises_user_idx').on(table.userId),
 		index('exercises_category_idx').on(table.category)
 	]
 );
@@ -45,11 +66,12 @@ export const sessions = sqliteTable(
 	'sessions',
 	{
 		id: text('id').primaryKey(),
+		...owner,
 		name: text('name').notNull(),
 		description: text('description').notNull().default(''),
 		...timestamps
 	},
-	(table) => [index('sessions_name_idx').on(table.name)]
+	(table) => [index('sessions_user_idx').on(table.userId, table.name)]
 );
 
 export const sessionBlocks = sqliteTable(
@@ -96,6 +118,7 @@ export const routines = sqliteTable(
 	'routines',
 	{
 		id: text('id').primaryKey(),
+		...owner,
 		name: text('name').notNull().default(''),
 		sessionId: text('session_id')
 			.notNull()
@@ -113,6 +136,7 @@ export const routines = sqliteTable(
 	},
 	(table) => [
 		index('routines_session_idx').on(table.sessionId),
+		index('routines_user_idx').on(table.userId),
 		index('routines_active_idx').on(table.active)
 	]
 );
@@ -143,6 +167,7 @@ export const workouts = sqliteTable(
 	'workouts',
 	{
 		id: text('id').primaryKey(),
+		...owner,
 		/** No foreign key on purpose: history outlives the session it ran. */
 		sessionId: text('session_id').notNull(),
 		sessionName: text('session_name').notNull(),
@@ -163,6 +188,7 @@ export const workouts = sqliteTable(
 	},
 	(table) => [
 		index('workouts_session_idx').on(table.sessionId),
+		index('workouts_user_idx').on(table.userId, table.startedAt),
 		index('workouts_started_idx').on(table.startedAt),
 		index('workouts_status_idx').on(table.status)
 	]
@@ -201,6 +227,19 @@ export const workoutSteps = sqliteTable(
 		index('workout_steps_exercise_idx').on(table.exerciseId)
 	]
 );
+
+/**
+ * Instance-wide settings. Exactly one row, id `app` — a table rather than a
+ * config file because an admin toggles it at runtime.
+ */
+export const settings = sqliteTable('settings', {
+	id: text('id').primaryKey(),
+	/** When false, only an admin can add users. */
+	registrationEnabled: integer('registration_enabled', { mode: 'boolean' })
+		.notNull()
+		.default(false),
+	updatedAt: text('updated_at').notNull()
+});
 
 export const sessionsRelations = relations(sessions, ({ many }) => ({
 	blocks: many(sessionBlocks),
@@ -242,3 +281,4 @@ export type RoutineRow = typeof routines.$inferSelect;
 export type RoutineOccurrenceRow = typeof routineOccurrences.$inferSelect;
 export type WorkoutRow = typeof workouts.$inferSelect;
 export type WorkoutStepRow = typeof workoutSteps.$inferSelect;
+export type SettingsRow = typeof settings.$inferSelect;
