@@ -1,0 +1,245 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens.
+ *
+ * Raw values live on :root and are swapped per theme; `@theme inline` maps them
+ * to Tailwind utilities by reference, so `bg-surface` follows the theme instead
+ * of baking in a colour. Change a value here and it moves everywhere.
+ */
+
+:root,
+:root[data-theme='dark'] {
+	color-scheme: dark;
+
+	--app-bg: #0a0c0f;
+	--app-bg-elevated: #101419;
+	--app-surface: #151a21;
+	--app-surface-raised: #1c232c;
+	--app-surface-sunken: #0d1116;
+	--app-border: #242c36;
+	--app-border-strong: #35404d;
+
+	--app-text: #e8edf3;
+	--app-text-muted: #97a3b2;
+	--app-text-subtle: #6b7787;
+
+	--app-accent: #c9f227;
+	--app-accent-hover: #d7f74f;
+	--app-accent-ink: #0a0c0f;
+	--app-accent-soft: color-mix(in oklab, #c9f227 16%, transparent);
+
+	--app-success: #3ddc97;
+	--app-warning: #ffc857;
+	--app-danger: #ff6b6b;
+	--app-info: #63b3ff;
+
+	--app-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+	--app-shadow-lg: 0 24px 60px -24px rgb(0 0 0 / 0.8);
+
+	/*
+	 * Data-visualisation slots. The series colour and the 4-step magnitude ramp
+	 * are validated against this surface (ordinal gate: monotone lightness,
+	 * >=0.06 lightness gaps, nearest-surface step >=2:1) rather than eyeballed.
+	 */
+	--viz-series: #c9f227;
+	--viz-series-wash: color-mix(in oklab, #c9f227 12%, transparent);
+	--viz-grid: #242c36;
+	--viz-ramp-1: #43511f;
+	--viz-ramp-2: #6f8622;
+	--viz-ramp-3: #9cbc24;
+	--viz-ramp-4: #c9f227;
+	--viz-good: #3ddc97;
+	--viz-critical: #ff6b6b;
+	--viz-surface: #151a21;
+}
+
+:root[data-theme='light'] {
+	color-scheme: light;
+
+	--app-bg: #f4f6f8;
+	--app-bg-elevated: #ffffff;
+	--app-surface: #ffffff;
+	--app-surface-raised: #ffffff;
+	--app-surface-sunken: #eef1f5;
+	--app-border: #e0e5ec;
+	--app-border-strong: #c6cedb;
+
+	--app-text: #0e141b;
+	--app-text-muted: #56626f;
+	--app-text-subtle: #7b8794;
+
+	--app-accent: #b5e114;
+	--app-accent-hover: #a4cd0c;
+	--app-accent-ink: #10160b;
+	--app-accent-soft: color-mix(in oklab, #b5e114 22%, transparent);
+
+	--app-success: #12a06a;
+	--app-warning: #b7791f;
+	--app-danger: #d64545;
+	--app-info: #2b6cb0;
+
+	--app-shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 8px 24px -12px rgb(16 24 40 / 0.16);
+	--app-shadow-lg: 0 24px 60px -24px rgb(16 24 40 / 0.28);
+
+	/* Volt is unreadable as a mark on white (1.5:1), so light mode plots a
+	 * darker step of the same hue. Same ramp, re-stepped for this surface. */
+	--viz-series: #6f8622;
+	--viz-series-wash: color-mix(in oklab, #6f8622 12%, transparent);
+	--viz-grid: #e0e5ec;
+	--viz-ramp-1: #a4c129;
+	--viz-ramp-2: #7e961f;
+	--viz-ramp-3: #596b14;
+	--viz-ramp-4: #33400a;
+	--viz-good: #12a06a;
+	--viz-critical: #d64545;
+	--viz-surface: #ffffff;
+}
+
+@theme inline {
+	--color-bg: var(--app-bg);
+	--color-bg-elevated: var(--app-bg-elevated);
+	--color-surface: var(--app-surface);
+	--color-surface-raised: var(--app-surface-raised);
+	--color-surface-sunken: var(--app-surface-sunken);
+	--color-line: var(--app-border);
+	--color-line-strong: var(--app-border-strong);
+
+	--color-ink: var(--app-text);
+	--color-ink-muted: var(--app-text-muted);
+	--color-ink-subtle: var(--app-text-subtle);
+
+	--color-accent: var(--app-accent);
+	--color-accent-hover: var(--app-accent-hover);
+	--color-accent-ink: var(--app-accent-ink);
+	--color-accent-soft: var(--app-accent-soft);
+
+	--color-series: var(--viz-series);
+	--color-series-wash: var(--viz-series-wash);
+	--color-grid: var(--viz-grid);
+	--color-viz-surface: var(--viz-surface);
+	--color-good: var(--viz-good);
+	--color-critical: var(--viz-critical);
+
+	--color-success: var(--app-success);
+	--color-warning: var(--app-warning);
+	--color-danger: var(--app-danger);
+	--color-info: var(--app-info);
+
+	--shadow-card: var(--app-shadow);
+	--shadow-float: var(--app-shadow-lg);
+
+	--radius-card: 1rem;
+	--radius-field: 0.625rem;
+
+	--font-sans:
+		'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+
+	/* Tabular figures for anything that ticks, so digits never jitter. */
+	--font-numeric: 'Inter var', ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+	html {
+		-webkit-text-size-adjust: 100%;
+		scrollbar-gutter: stable;
+	}
+
+	body {
+		background-color: var(--app-bg);
+		color: var(--app-text);
+		font-family: var(--font-sans);
+		font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+		-webkit-font-smoothing: antialiased;
+		overscroll-behavior-y: none;
+	}
+
+	/* Never let a mis-sized element create a horizontal scrollbar on a phone. */
+	body,
+	#app {
+		max-width: 100vw;
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--app-accent);
+		outline-offset: 2px;
+		border-radius: 4px;
+	}
+
+	button,
+	[role='button'] {
+		-webkit-tap-highlight-color: transparent;
+		touch-action: manipulation;
+	}
+
+	input,
+	textarea,
+	select {
+		font: inherit;
+		color: inherit;
+	}
+
+	/* iOS zooms any field under 16px on focus. */
+	@media (max-width: 640px) {
+		input,
+		textarea,
+		select {
+			font-size: 16px;
+		}
+	}
+
+	::-webkit-scrollbar {
+		width: 10px;
+		height: 10px;
+	}
+	::-webkit-scrollbar-thumb {
+		background: var(--app-border-strong);
+		border-radius: 999px;
+		border: 3px solid transparent;
+		background-clip: content-box;
+	}
+	::-webkit-scrollbar-track {
+		background: transparent;
+	}
+}
+
+@layer components {
+	/* Numbers that update in place: timers, counters, metric values. */
+	.tabular {
+		font-variant-numeric: tabular-nums;
+		font-feature-settings: 'tnum';
+	}
+
+	.card {
+		background-color: var(--app-surface);
+		border: 1px solid var(--app-border);
+		border-radius: var(--radius-card, 1rem);
+		box-shadow: var(--app-shadow);
+	}
+
+	/* Bottom nav and sticky action bars have to clear the home indicator. */
+	.pb-safe {
+		padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+	}
+	.pt-safe {
+		padding-top: env(safe-area-inset-top);
+	}
+
+	.scrollbar-none {
+		scrollbar-width: none;
+	}
+	.scrollbar-none::-webkit-scrollbar {
+		display: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+}
