@@ -8,7 +8,13 @@ import type {
 import type { MetricsSnapshot, SessionMetrics } from '$domain/models/metrics.ts';
 import type { ImportOptions, ImportResult, Pack } from '$domain/models/pack.ts';
 import type { AppSettings, AppSettingsPatch } from '$domain/models/settings.ts';
-import type { CreateUserInput, ManagedUser, SetRoleInput } from '$domain/models/user.ts';
+import type {
+	ChangeUsernameInput,
+	CreateUserInput,
+	ManagedUser,
+	SessionUser,
+	SetRoleInput
+} from '$domain/models/user.ts';
 import type {
 	OccurrenceResolution,
 	RoutineDetail,
@@ -142,6 +148,12 @@ export const api = {
 	settings: {
 		get: (fetch?: FetchLike) => request<AppSettings>('GET', '/api/settings', { fetch }),
 		update: (body: AppSettingsPatch) => request<AppSettings>('PATCH', '/api/settings', { body })
+	},
+
+	account: {
+		/** Renames the signed-in user; the returned user is what the nav should show now. */
+		changeUsername: (body: ChangeUsernameInput) =>
+			request<SessionUser>('PATCH', '/api/account', { body })
 	},
 
 	admin: {

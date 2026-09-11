@@ -7,3 +7,4 @@ export { packService } from './pack.service.ts';
 export { settingsService } from './settings.service.ts';
 export { adminService } from './admin.service.ts';
 export { healthService } from './health.service.ts';
+export { accountService } from './account.service.ts';

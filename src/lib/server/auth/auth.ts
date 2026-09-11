@@ -2,7 +2,12 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { admin, username } from 'better-auth/plugins';
-import { emailForUsername } from '$domain/models/user.ts';
+import {
+	USERNAME_MAX_LENGTH,
+	USERNAME_MIN_LENGTH,
+	USERNAME_PATTERN,
+	emailForUsername
+} from '$domain/models/user.ts';
 import { db, schema } from '../db/client.ts';
 import { countUsers } from './users.ts';
 import { purgeUserData } from './purge.ts';
@@ -103,7 +108,16 @@ export const auth = betterAuth({
 		expiresIn: 60 * 60 * 24 * 30,
 		updateAge: 60 * 60 * 24
 	},
-	plugins: [username(), admin({ defaultRole: 'user', adminRoles: ['admin'] })],
+	plugins: [
+		// The same rule as `usernameSchema`, so a name the app accepts is a name
+		// sign-in accepts — the plugin's default is narrower.
+		username({
+			minUsernameLength: USERNAME_MIN_LENGTH,
+			maxUsernameLength: USERNAME_MAX_LENGTH,
+			usernameValidator: (name) => USERNAME_PATTERN.test(name)
+		}),
+		admin({ defaultRole: 'user', adminRoles: ['admin'] })
+	],
 
 	hooks: {
 		/**

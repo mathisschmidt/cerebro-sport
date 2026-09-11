@@ -1,4 +1,5 @@
 import { asc, count, eq } from 'drizzle-orm';
+import { emailForUsername } from '$domain/models/user.ts';
 import { db, schema } from '../db/client.ts';
 
 /**
@@ -23,6 +24,35 @@ export function findUserByUsername(name: string) {
 
 export function setUserRole(userId: string, role: 'admin' | 'user'): void {
 	db.update(schema.user).set({ role }).where(eq(schema.user.id, userId)).run();
+}
+
+/**
+ * Renames an account. `name` must already be normalised and validated.
+ *
+ * The synthesised email moves with the username — otherwise the old name stays
+ * reserved and the new one can never be registered by anyone else. Better Auth
+ * has no notion of that rule, which is why this is a direct write rather than
+ * an `updateUser` followed by a `changeEmail`: one statement, or nothing.
+ *
+ * Returns false when the name is held by a different account. The check and
+ * the write share a transaction, so two renames to the same name cannot both
+ * pass the check.
+ */
+export function renameUser(userId: string, name: string): boolean {
+	return db.transaction((tx) => {
+		const holder = tx
+			.select({ id: schema.user.id })
+			.from(schema.user)
+			.where(eq(schema.user.username, name))
+			.get();
+		if (holder && holder.id !== userId) return false;
+
+		tx.update(schema.user)
+			.set({ username: name, displayUsername: name, name, email: emailForUsername(name) })
+			.where(eq(schema.user.id, userId))
+			.run();
+		return true;
+	});
 }
 
 /**

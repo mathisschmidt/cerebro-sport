@@ -78,9 +78,11 @@ or close registration, add accounts, change roles, and delete accounts. Deleting
 an account permanently deletes everything it owned. An admin cannot delete their
 own account or drop their own admin role, so an instance cannot be locked out.
 
-Everyone can change their own password from the **Account** page — the current
-one is required, and there is an option to sign out every other device at the
-same time. There is no "forgot password" flow, because no mail is configured.
+Everyone can change their own username and password from the **Account** page.
+Renaming keeps everything — data and sessions belong to the account, not the
+name. A password change asks for the current one, and can sign out every other
+device at the same time. There is no "forgot password" flow, because no mail is
+configured.
 
 Auth, sessions and roles are handled by [Better Auth](https://better-auth.com)
 with its username and admin plugins, on the same SQLite database through the
@@ -95,7 +97,7 @@ Drizzle adapter.
   AI chat, paste the answer back to import it. See below.
 - **Metrics** (`/metrics`) — overall volume and consistency, then a per-session
   breakdown down to the pace of each individual step.
-- **Account** (`/account`) — who you are signed in as; change your password.
+- **Account** (`/account`) — change your username or password.
 - **Admin** (`/admin`, admins only) — registration, accounts and roles.
 - **Runner** (`/run/[id]`) — full-screen, one-handed. Countdown for timed work, a
   big *Done* button for reps, audio and haptic cues, a screen wake lock, and

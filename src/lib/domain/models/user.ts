@@ -32,13 +32,21 @@ export const USER_ROLE_LABEL: Record<UserRole, string> = {
 /**
  * What people sign in with. Kept deliberately narrow — it ends up in a
  * synthesised email address, so no spaces or exotic characters.
+ *
+ * The pieces are exported because the Better Auth username plugin is configured
+ * from them: its own default is narrower (no dash, 30 characters), and a name
+ * that passes here but not there could be saved and then refused at sign-in.
  */
+export const USERNAME_MIN_LENGTH = 3;
+export const USERNAME_MAX_LENGTH = 32;
+export const USERNAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
+
 export const usernameSchema = z
 	.string()
 	.trim()
-	.min(3, 'At least 3 characters')
-	.max(32, 'At most 32 characters')
-	.regex(/^[a-zA-Z0-9._-]+$/, 'Letters, numbers, dot, dash and underscore only');
+	.min(USERNAME_MIN_LENGTH, `At least ${USERNAME_MIN_LENGTH} characters`)
+	.max(USERNAME_MAX_LENGTH, `At most ${USERNAME_MAX_LENGTH} characters`)
+	.regex(USERNAME_PATTERN, 'Letters, numbers, dot, dash and underscore only');
 
 export const passwordSchema = z
 	.string()
@@ -74,6 +82,10 @@ export const changePasswordSchema = z
 		message: 'Choose a password you are not already using'
 	});
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+/** Someone renaming their own account. */
+export const changeUsernameSchema = z.object({ username: usernameSchema });
+export type ChangeUsernameInput = z.infer<typeof changeUsernameSchema>;
 
 /** The signed-in user, as every page and endpoint sees them. */
 export interface SessionUser {
