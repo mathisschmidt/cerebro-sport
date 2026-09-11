@@ -5,6 +5,7 @@
 	import Toaster from '$components/ui/Toaster.svelte';
 	import { theme } from '$client/theme.svelte.ts';
 	import { authClient } from '$client/auth.ts';
+	import { USER_ROLE_LABEL } from '$domain/models/user.ts';
 	import { goto } from '$app/navigation';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types.ts';
@@ -111,20 +112,28 @@
 				</button>
 
 				{#if data.user}
-					<div class="border-line mt-1 flex items-center gap-2 border-t px-1 pt-2">
-						<span
-							class="bg-surface-sunken text-ink-muted grid size-8 shrink-0 place-items-center rounded-full text-[12px] font-semibold uppercase"
+					<div class="border-line mt-1 flex items-center gap-1 border-t pt-2">
+						<a
+							href="/account"
+							class="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[10px] px-1 transition-colors
+							{isActive('/account') ? 'bg-accent-soft' : 'hover:bg-surface'}"
+							aria-current={isActive('/account') ? 'page' : undefined}
+							title="Account"
 						>
-							{data.user.username.slice(0, 2)}
-						</span>
-						<span class="min-w-0 flex-1">
-							<span class="text-ink block truncate text-[13px] font-medium">
-								{data.user.username}
+							<span
+								class="bg-surface-sunken text-ink-muted grid size-8 shrink-0 place-items-center rounded-full text-[12px] font-semibold uppercase"
+							>
+								{data.user.username.slice(0, 2)}
 							</span>
-							{#if data.user.role === 'admin'}
-								<span class="text-ink-subtle block text-[11px]">Admin</span>
-							{/if}
-						</span>
+							<span class="min-w-0 flex-1">
+								<span class="text-ink block truncate text-[13px] font-medium">
+									{data.user.username}
+								</span>
+								<span class="text-ink-subtle block text-[11px]">
+									{USER_ROLE_LABEL[data.user.role]}
+								</span>
+							</span>
+						</a>
 						<button
 							type="button"
 							class="text-ink-subtle hover:text-ink hover:bg-surface grid size-8 shrink-0 place-items-center rounded-lg transition-colors disabled:opacity-50"
@@ -152,6 +161,17 @@
 					<span class="text-sm font-semibold">Cerebro&nbsp;Sport</span>
 				</a>
 				<div class="-mr-2 flex items-center">
+					{#if data.user}
+						<a
+							href="/account"
+							class="grid size-9 place-items-center rounded-lg {isActive('/account')
+								? 'text-accent'
+								: 'text-ink-muted hover:text-ink'}"
+							aria-label="Account"
+						>
+							<Icon name="user" size={18} />
+						</a>
+					{/if}
 					{#if data.user?.role === 'admin'}
 						<a
 							href="/admin"

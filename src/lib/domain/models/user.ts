@@ -57,10 +57,22 @@ export const createUserSchema = credentialsSchema.extend({
 });
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 
-export const changePasswordSchema = z.object({
-	currentPassword: z.string().min(1, 'Required'),
-	newPassword: passwordSchema
-});
+/**
+ * Someone changing their own password. This is Better Auth's `/change-password`
+ * body exactly — the Account page calls that endpoint directly, since it is the
+ * one account write the app adds no rule of its own to.
+ */
+export const changePasswordSchema = z
+	.object({
+		currentPassword: z.string().min(1, 'Required'),
+		newPassword: passwordSchema,
+		/** Ends every other session, so a device that was signed in with the old password is out. */
+		revokeOtherSessions: z.boolean().default(false)
+	})
+	.refine((input) => input.newPassword !== input.currentPassword, {
+		path: ['newPassword'],
+		message: 'Choose a password you are not already using'
+	});
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
 /** The signed-in user, as every page and endpoint sees them. */

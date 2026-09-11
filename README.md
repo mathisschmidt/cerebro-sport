@@ -60,9 +60,10 @@ Everything is private by default. A route has to be listed as public in
 exactly one account — one athlete's library, sessions, routines and history are
 invisible to everyone else, including other admins.
 
-**First run** creates an admin: `admin` / `admin123`. Change the password, or
-set `ADMIN_USERNAME` and `ADMIN_PASSWORD` before the first boot. If the database
-already held training data, that data is adopted by this account.
+**First run** creates an admin: `admin` / `admin123`. Change the password from
+the Account page, or set `ADMIN_USERNAME` and `ADMIN_PASSWORD` before the first
+boot. If the database already held training data, that data is adopted by this
+account.
 
 Sign-in is by username, so the synthesised email address is never typed and
 never used.
@@ -77,6 +78,10 @@ or close registration, add accounts, change roles, and delete accounts. Deleting
 an account permanently deletes everything it owned. An admin cannot delete their
 own account or drop their own admin role, so an instance cannot be locked out.
 
+Everyone can change their own password from the **Account** page — the current
+one is required, and there is an option to sign out every other device at the
+same time. There is no "forgot password" flow, because no mail is configured.
+
 Auth, sessions and roles are handled by [Better Auth](https://better-auth.com)
 with its username and admin plugins, on the same SQLite database through the
 Drizzle adapter.
@@ -90,6 +95,7 @@ Drizzle adapter.
   AI chat, paste the answer back to import it. See below.
 - **Metrics** (`/metrics`) — overall volume and consistency, then a per-session
   breakdown down to the pace of each individual step.
+- **Account** (`/account`) — who you are signed in as; change your password.
 - **Admin** (`/admin`, admins only) — registration, accounts and roles.
 - **Runner** (`/run/[id]`) — full-screen, one-handed. Countdown for timed work, a
   big *Done* button for reps, audio and haptic cues, a screen wake lock, and
@@ -211,7 +217,7 @@ docker compose up -d --build
 |---|---|
 | `BETTER_AUTH_SECRET` | Signs session cookies. `openssl rand -base64 32`. The app refuses to serve in production without it; changing it signs everyone out. |
 | `ORIGIN` | The public URL, no trailing slash. SvelteKit builds absolute URLs from it and cannot infer it behind a proxy. On a LAN, the address you actually type on the phone: `http://192.168.1.20:3000`. |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | The account created on first boot only. Change the password after signing in. |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | The account created on first boot only. Change the password from the Account page after signing in. |
 | `BIND_ADDRESS` | Optional. Defaults to every interface. Set `127.0.0.1` if a reverse proxy on the same host should be the only thing that can reach it. |
 
 Both compose and Portainer refuse to start the stack if `BETTER_AUTH_SECRET` or
