@@ -4,7 +4,9 @@
 	import {
 		buildCoachPrompt,
 		buildSkillFile,
+		describeAsk,
 		emptyBrief,
+		wantsSessions,
 		type CoachBrief
 	} from '$domain/services/coach-prompt.ts';
 	import { toasts } from '$client/toast.svelte.ts';
@@ -51,6 +53,15 @@
 	let packText = $state('');
 
 	const exerciseNames = $derived(data.exercises.map((exercise) => exercise.name));
+
+	/**
+	 * A schedule with no sessions to design can only point at sessions that
+	 * already exist — worth saying before the prompt goes out asking for
+	 * routines over an empty library.
+	 */
+	const nothingToSchedule = $derived(
+		brief.includeRoutines && !wantsSessions(brief) && data.sessions.length === 0
+	);
 
 	function generate() {
 		if (!brief.goal.trim()) {
@@ -107,7 +118,15 @@
 
 			<BriefForm bind:brief libraryExercises={exerciseNames} />
 
-			<div class="mt-4 flex justify-end">
+			<div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+				<p class="text-ink-subtle text-[12px]">
+					Asking for <span class="text-ink-muted font-medium">{describeAsk(brief)}</span>.
+					{#if nothingToSchedule}
+						<span class="text-danger">
+							You have no saved sessions to schedule — turn on “Sessions to design” too.
+						</span>
+					{/if}
+				</p>
 				<Button variant="primary" icon="zap" onclick={generate}>Generate the prompt</Button>
 			</div>
 		</Card>
