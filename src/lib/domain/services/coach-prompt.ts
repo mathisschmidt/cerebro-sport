@@ -17,41 +17,130 @@ export type ExercisePolicy = 'library-only' | 'prefer-library' | 'free';
 export type Level = 'beginner' | 'intermediate' | 'advanced';
 export type MeasurePreference = 'mixed' | 'reps' | 'time';
 
+/**
+ * The brief. Only the goal is always there — every other field is `null` until
+ * the athlete turns that option on, so the brief carries what was actually
+ * asked for rather than defaults nobody chose. The form reveals an input only
+ * for the fields that are not null, and the prompt mentions only those.
+ */
 export interface CoachBrief {
 	/** The free-text ask. Everything else is a refinement of it. */
 	goal: string;
-	discipline: string;
-	level: Level;
-	sessionCount: number;
-	minutesPerSession: number;
-	daysPerWeek: number;
-	equipment: string;
-	constraints: string;
-	exercisePolicy: ExercisePolicy;
-	mustInclude: string[];
-	avoid: string[];
-	measurePreference: MeasurePreference;
+	discipline: string | null;
+	level: Level | null;
+	sessionCount: number | null;
+	minutesPerSession: number | null;
+	daysPerWeek: number | null;
+	equipment: string | null;
+	constraints: string | null;
+	exercisePolicy: ExercisePolicy | null;
+	mustInclude: string[] | null;
+	avoid: string[] | null;
+	measurePreference: MeasurePreference | null;
+	/** Asking for a schedule is a yes/no, so it has no value to hold. */
 	includeRoutines: boolean;
-	notes: string;
+	notes: string | null;
 }
 
+/** The fields the form keeps behind a toggle — everything with an off state. */
+export type BriefOption = Exclude<keyof CoachBrief, 'goal' | 'includeRoutines'>;
+
+/**
+ * What a field is worth the moment its toggle is switched on. It lives next to
+ * the brief rather than in the form so there is one definition of each default.
+ */
+export const BRIEF_DEFAULTS: { [K in BriefOption]: NonNullable<CoachBrief[K]> } = {
+	discipline: '',
+	level: 'intermediate',
+	sessionCount: 3,
+	minutesPerSession: 30,
+	daysPerWeek: 3,
+	equipment: '',
+	constraints: '',
+	exercisePolicy: 'prefer-library',
+	mustInclude: [],
+	avoid: [],
+	measurePreference: 'mixed',
+	notes: ''
+};
+
+/**
+ * Turns one option on — giving it the value it takes when first asked for — or
+ * off again, which forgets whatever was in it. A switch rather than a generic
+ * write so every field keeps its own type and a missing option is a type error.
+ */
+export function setBriefOption(brief: CoachBrief, key: BriefOption, on: boolean): CoachBrief {
+	switch (key) {
+		case 'discipline':
+			return { ...brief, discipline: on ? BRIEF_DEFAULTS.discipline : null };
+		case 'level':
+			return { ...brief, level: on ? BRIEF_DEFAULTS.level : null };
+		case 'sessionCount':
+			return { ...brief, sessionCount: on ? BRIEF_DEFAULTS.sessionCount : null };
+		case 'minutesPerSession':
+			return { ...brief, minutesPerSession: on ? BRIEF_DEFAULTS.minutesPerSession : null };
+		case 'daysPerWeek':
+			return { ...brief, daysPerWeek: on ? BRIEF_DEFAULTS.daysPerWeek : null };
+		case 'equipment':
+			return { ...brief, equipment: on ? BRIEF_DEFAULTS.equipment : null };
+		case 'constraints':
+			return { ...brief, constraints: on ? BRIEF_DEFAULTS.constraints : null };
+		case 'exercisePolicy':
+			return { ...brief, exercisePolicy: on ? BRIEF_DEFAULTS.exercisePolicy : null };
+		case 'mustInclude':
+			return { ...brief, mustInclude: on ? [...BRIEF_DEFAULTS.mustInclude] : null };
+		case 'avoid':
+			return { ...brief, avoid: on ? [...BRIEF_DEFAULTS.avoid] : null };
+		case 'measurePreference':
+			return { ...brief, measurePreference: on ? BRIEF_DEFAULTS.measurePreference : null };
+		case 'notes':
+			return { ...brief, notes: on ? BRIEF_DEFAULTS.notes : null };
+	}
+}
+
+/** An untouched brief: the goal, and nothing asked for yet. */
 export function emptyBrief(): CoachBrief {
 	return {
 		goal: '',
-		discipline: '',
-		level: 'intermediate',
-		sessionCount: 3,
-		minutesPerSession: 30,
-		daysPerWeek: 3,
-		equipment: '',
-		constraints: '',
-		exercisePolicy: 'prefer-library',
-		mustInclude: [],
-		avoid: [],
-		measurePreference: 'mixed',
-		includeRoutines: true,
-		notes: ''
+		discipline: null,
+		level: null,
+		sessionCount: null,
+		minutesPerSession: null,
+		daysPerWeek: null,
+		equipment: null,
+		constraints: null,
+		exercisePolicy: null,
+		mustInclude: null,
+		avoid: null,
+		measurePreference: null,
+		includeRoutines: false,
+		notes: null
 	};
+}
+
+/**
+ * Whether the brief asks for sessions at all. The three session-shaping options
+ * are optional, and with none of them set the athlete wants something smaller:
+ * a schedule over the sessions they already have, or just the exercises.
+ */
+export function wantsSessions(brief: CoachBrief): boolean {
+	return (
+		brief.sessionCount !== null || brief.minutesPerSession !== null || brief.daysPerWeek !== null
+	);
+}
+
+/** What the prompt is about to ask for, so an empty brief cannot surprise. */
+export function describeAsk(brief: CoachBrief): string {
+	if (wantsSessions(brief)) {
+		const count =
+			brief.sessionCount === null
+				? 'sessions'
+				: `${brief.sessionCount} session${brief.sessionCount === 1 ? '' : 's'}`;
+		const schedule = brief.includeRoutines ? ', a weekly schedule' : '';
+		return `${count}${schedule} and the exercises they need`;
+	}
+	if (brief.includeRoutines) return 'a weekly schedule built from the sessions you already have';
+	return 'exercises only — no sessions, no schedule';
 }
 
 const POLICY_TEXT: Record<ExercisePolicy, string> = {
@@ -314,19 +403,24 @@ export function buildCoachPrompt(brief: CoachBrief, context: PromptContext): str
 	const request = [
 		bullet('Goal', brief.goal),
 		bullet('Sport / discipline', brief.discipline),
-		bullet('Level', LEVEL_TEXT[brief.level]),
-		bullet('How many sessions to design', String(brief.sessionCount)),
-		bullet('Target length per session', `about ${brief.minutesPerSession} minutes`),
-		brief.includeRoutines ? bullet('Training days per week', String(brief.daysPerWeek)) : null,
+		bullet('Level', brief.level && LEVEL_TEXT[brief.level]),
+		bullet('How many sessions to design', brief.sessionCount?.toString()),
+		bullet(
+			'Target length per session',
+			brief.minutesPerSession === null ? null : `about ${brief.minutesPerSession} minutes`
+		),
+		bullet('Training days per week', brief.daysPerWeek?.toString()),
 		bullet('Equipment available', brief.equipment),
 		bullet('Constraints, injuries, things to work around', brief.constraints),
-		bullet('Must include these exercises', brief.mustInclude.join(', ')),
-		bullet('Must avoid', brief.avoid.join(', ')),
-		bullet('Set style', MEASURE_TEXT[brief.measurePreference]),
+		bullet('Must include these exercises', brief.mustInclude?.join(', ')),
+		bullet('Must avoid', brief.avoid?.join(', ')),
+		bullet('Set style', brief.measurePreference && MEASURE_TEXT[brief.measurePreference]),
 		bullet('Anything else', brief.notes)
 	]
 		.filter((line): line is string => line !== null)
 		.join('\n');
+
+	const policy = brief.exercisePolicy ? `\n\n${POLICY_TEXT[brief.exercisePolicy]}` : '';
 
 	const librarySection =
 		library.length > 0
@@ -336,27 +430,78 @@ These already exist. Refer to any of them by the exact name below and do NOT
 redefine them in \`exercises\` — reusing a name keeps their training history
 connected.
 
-${library.map((name) => `- ${name}`).join('\n')}${truncated > 0 ? `\n- …and ${truncated} more` : ''}
-
-${POLICY_TEXT[brief.exercisePolicy]}`
+${library.map((name) => `- ${name}`).join('\n')}${truncated > 0 ? `\n- …and ${truncated} more` : ''}${policy}`
 			: `## The athlete's existing exercise library
 
 The library is empty, so define every exercise you use in the \`exercises\`
 array.`;
 
+	const librarySessions = context.librarySessions ?? [];
+	/** Only a schedule can target them, so the list is noise without one. */
 	const sessionsSection =
-		context.librarySessions && context.librarySessions.length > 0
-			? `\nExisting sessions a routine may target: ${context.librarySessions.map((n) => `"${n}"`).join(', ')}.\n`
+		brief.includeRoutines && librarySessions.length > 0
+			? `\n\nExisting sessions a routine may target: ${librarySessions.map((n) => `"${n}"`).join(', ')}.`
 			: '';
 
-	const routineSection = brief.includeRoutines
-		? `Also produce \`routines\` that schedule these sessions across a typical week
-(${brief.daysPerWeek} training day${brief.daysPerWeek === 1 ? '' : 's'} per week), starting ${today}.`
-		: 'Leave `routines` as an empty array — the athlete will schedule these themselves.';
+	/**
+	 * Three shapes of ask, and the brief decides which. Sessions are only
+	 * designed when the athlete set one of the session options; a schedule
+	 * without them can only target sessions they already have, and with neither
+	 * the pack is the exercises themselves.
+	 */
+	const designSessions = wantsSessions(brief);
+	const scheduleOnly = !designSessions && brief.includeRoutines && librarySessions.length > 0;
+	const perWeek =
+		brief.daysPerWeek === null
+			? ''
+			: ` (${brief.daysPerWeek} training day${brief.daysPerWeek === 1 ? '' : 's'} per week)`;
 
-	return `You are an experienced strength and conditioning coach. Design a training
+	const tasks: string[] = [];
+
+	if (designSessions) {
+		tasks.push(
+			brief.sessionCount === null
+				? 'Design the sessions the request above needs — you decide how many.'
+				: `Design ${brief.sessionCount} session${brief.sessionCount === 1 ? '' : 's'} that meet the request above.`
+		);
+		if (brief.minutesPerSession !== null) {
+			tasks.push(
+				`Each session should come out at roughly ${brief.minutesPerSession} minutes, counting work and rest.`
+			);
+		}
+		tasks.push(
+			brief.includeRoutines
+				? `Also produce \`routines\` that schedule these sessions across a typical week${perWeek}, starting ${today}.`
+				: 'Leave `routines` as an empty array — the athlete will schedule these themselves.'
+		);
+	} else if (scheduleOnly) {
+		tasks.push(
+			'Do NOT design any new sessions — leave `sessions` as an empty array. Only the schedule was asked for.'
+		);
+		tasks.push(
+			`Produce \`routines\` that schedule the athlete's existing sessions listed above${perWeek}, starting ${today}. Name each one exactly as it appears there.`
+		);
+	} else {
+		tasks.push(
+			`Do NOT design sessions or routines — leave both arrays empty${brief.includeRoutines ? ', and note in `summary` that there are no saved sessions to schedule yet' : ''}. What was asked for is the exercises themselves: define every movement the request above calls for in \`exercises\`, each with full \`instructions\`.`
+		);
+	}
+
+	tasks.push('Return the result as one JSON object in the format below.');
+
+	const opening = designSessions
+		? `Design a training
 programme for the athlete below, then return it as a single JSON file in the
-exact format specified further down.
+exact format specified further down.`
+		: scheduleOnly
+			? `Plan the training
+week for the athlete below out of the sessions they already have, then return
+it as a single JSON file in the exact format specified further down.`
+			: `Write up the
+exercises the athlete below is asking for, then return them as a single JSON
+file in the exact format specified further down.`;
+
+	return `You are an experienced strength and conditioning coach. ${opening}
 
 ## What the athlete asked for
 
@@ -366,10 +511,7 @@ ${librarySection}${sessionsSection}
 
 ## Your task
 
-1. Design ${brief.sessionCount} session${brief.sessionCount === 1 ? '' : 's'} that meet the request above.
-2. Each session should come out at roughly ${brief.minutesPerSession} minutes, counting work and rest.
-3. ${routineSection}
-4. Return the result as one JSON object in the format below.
+${tasks.map((task, index) => `${index + 1}. ${task}`).join('\n')}
 
 ${formatSpec()}
 

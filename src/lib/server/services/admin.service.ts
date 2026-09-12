@@ -1,4 +1,4 @@
-import { asc, count, eq, sql } from 'drizzle-orm';
+import { asc, count, eq } from 'drizzle-orm';
 import type { CreateUserInput, ManagedUser, SetRoleInput, UserRole } from '$domain/models/user.ts';
 import { auth, emailForUsername } from '../auth/auth.ts';
 import { countAdmins } from '../auth/users.ts';
@@ -118,10 +118,5 @@ export const adminService = {
 		if (target.role === 'admin' && countAdmins() <= 1) {
 			throw badRequest('This is the only admin — promote someone else first');
 		}
-	},
-
-	/** Used by the sign-in screen to decide whether to offer a register link. */
-	userCount(): number {
-		return db.select({ value: sql<number>`count(*)` }).from(schema.user).get()?.value ?? 0;
 	}
 };

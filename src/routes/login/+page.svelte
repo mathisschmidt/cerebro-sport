@@ -82,14 +82,5 @@
 				</p>
 			{/if}
 		</form>
-
-		{#if data.freshInstall}
-			<p
-				class="border-line text-ink-subtle mt-4 rounded-xl border border-dashed px-4 py-3 text-center text-[12px] leading-relaxed"
-			>
-				Fresh install — sign in with <code class="text-ink">admin</code> /
-				<code class="text-ink">admin123</code>, then change the password.
-			</p>
-		{/if}
 	</div>
 </div>
