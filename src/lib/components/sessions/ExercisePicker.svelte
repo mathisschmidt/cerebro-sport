@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Exercise } from '$domain/models/exercise.ts';
-	import { EXERCISE_CATEGORY_LABEL } from '$domain/models/exercise.ts';
+	import { exerciseCategoryLabel } from '$domain/models/exercise.ts';
 	import { formatMeasure } from '$domain/models/common.ts';
 	import Badge from '$components/ui/Badge.svelte';
 	import Button from '$components/ui/Button.svelte';
@@ -87,7 +87,7 @@
 							<div class="min-w-0 flex-1">
 								<p class="text-ink truncate text-[13px] font-medium">{exercise.name}</p>
 								<p class="text-ink-subtle truncate text-[11px]">
-									{EXERCISE_CATEGORY_LABEL[exercise.category]}
+									{exerciseCategoryLabel(exercise)}
 									{#if exercise.description}· {exercise.description}{/if}
 								</p>
 							</div>

@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { Exercise, ExerciseWithUsage } from '$domain/models/exercise.ts';
+	import { exerciseCategoryLabel } from '$domain/models/exercise.ts';
 	import type { RoutineDetail } from '$domain/models/routine.ts';
 	import { formatDuration } from '$domain/models/common.ts';
 	import { api, ApiError } from '$client/api.ts';
@@ -62,7 +63,9 @@
 	);
 	const visibleExercises = $derived(
 		data.exercises.items.filter((exercise) =>
-			matches(`${exercise.name} ${exercise.description} ${exercise.tags.join(' ')}`)
+			matches(
+				`${exercise.name} ${exercise.description} ${exerciseCategoryLabel(exercise)} ${exercise.tags.join(' ')}`
+			)
 		)
 	);
 	const visibleRoutines = $derived(
@@ -252,6 +255,7 @@
 <ExerciseForm
 	bind:open={exerciseFormOpen}
 	exercise={editingExercise}
+	library={data.exercises.items}
 	onsaved={() => invalidateAll()}
 />
 

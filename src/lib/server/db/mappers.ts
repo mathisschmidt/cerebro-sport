@@ -53,6 +53,7 @@ export function toExercise(row: ExerciseRow): Exercise {
 		description: row.description,
 		instructions: row.instructions,
 		category: row.category as Exercise['category'],
+		customCategory: row.customCategory,
 		tags: parseJson<string[]>(row.tags, []),
 		defaultMeasure: toMeasure(row.defaultMeasureType, row.defaultMeasureValue),
 		createdAt: row.createdAt,

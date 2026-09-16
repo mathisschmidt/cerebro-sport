@@ -180,6 +180,7 @@
 
 <ExerciseForm
 	bind:open={exerciseFormOpen}
+	{library}
 	onsaved={(exercise) => {
 		library = [...library, exercise].sort((a, b) => a.name.localeCompare(b.name));
 		addItem(exercise);

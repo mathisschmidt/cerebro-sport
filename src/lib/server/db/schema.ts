@@ -48,6 +48,8 @@ export const exercises = sqliteTable(
 		description: text('description').notNull().default(''),
 		instructions: text('instructions').notNull().default(''),
 		category: text('category').notNull().default('other'),
+		/** The athlete's own name for an `other` category; null everywhere else. */
+		customCategory: text('custom_category'),
 		/** JSON array of strings. */
 		tags: text('tags').notNull().default('[]'),
 		defaultMeasureType: text('default_measure_type'),

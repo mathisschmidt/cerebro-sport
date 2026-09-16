@@ -55,6 +55,8 @@ Return a single JSON object — the "training pack".
   "instructions": string,       // HOW to perform it: setup, execution, form cues.
                                 // This is displayed on the phone mid-set, so make it useful.
   "category": strength | cardio | mobility | skill | endurance | other,
+  "customCategory": string | null, // only with "other": your own name for the
+                                   // category, max 40 chars. null keeps it "other"
   "tags": string[],             // 0-12 short tags, e.g. ["upper body", "no equipment"]
   "defaultMeasure": Measure | null
 }

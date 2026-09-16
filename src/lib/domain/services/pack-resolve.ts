@@ -86,6 +86,7 @@ function stubExercise(name: string): ExerciseInput {
 		description: '',
 		instructions: '',
 		category: 'other',
+		customCategory: null,
 		tags: [],
 		defaultMeasure: null
 	};
