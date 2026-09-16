@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { ExerciseWithUsage } from '$domain/models/exercise.ts';
-	import { EXERCISE_CATEGORY_LABEL } from '$domain/models/exercise.ts';
+	import { exerciseCategoryLabel } from '$domain/models/exercise.ts';
 	import { formatMeasure } from '$domain/models/common.ts';
 	import Badge from '$components/ui/Badge.svelte';
 	import Icon from '$components/ui/Icon.svelte';
@@ -27,7 +27,7 @@
 		>
 			<div class="flex flex-wrap items-center gap-2">
 				<span class="text-ink text-sm font-semibold">{exercise.name}</span>
-				<Badge>{EXERCISE_CATEGORY_LABEL[exercise.category]}</Badge>
+				<Badge>{exerciseCategoryLabel(exercise)}</Badge>
 				{#if exercise.defaultMeasure}
 					<Badge tone="accent">{formatMeasure(exercise.defaultMeasure)}</Badge>
 				{/if}

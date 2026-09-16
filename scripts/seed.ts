@@ -28,6 +28,7 @@ const EXERCISES: ExerciseInput[] = [
 		instructions:
 			'Grip slightly wider than the shoulders, palms forward. Pull until the chin clears the bar, then lower under control to full extension. No kipping.',
 		category: 'strength',
+		customCategory: null,
 		tags: ['upper body', 'calisthenics', 'back'],
 		defaultMeasure: { type: 'reps', value: 8 }
 	},
@@ -37,6 +38,7 @@ const EXERCISES: ExerciseInput[] = [
 		instructions:
 			'Hands under the shoulders, body in one line from heels to head. Lower until the chest is a fist above the floor, press back up without letting the hips sag.',
 		category: 'strength',
+		customCategory: null,
 		tags: ['upper body', 'calisthenics', 'chest'],
 		defaultMeasure: { type: 'reps', value: 15 }
 	},
@@ -46,6 +48,7 @@ const EXERCISES: ExerciseInput[] = [
 		instructions:
 			'Feet shoulder-width, toes slightly out. Sit back and down until the hip crease drops below the knee, drive through the whole foot to stand.',
 		category: 'strength',
+		customCategory: null,
 		tags: ['lower body', 'calisthenics'],
 		defaultMeasure: { type: 'reps', value: 20 }
 	},
@@ -54,6 +57,7 @@ const EXERCISES: ExerciseInput[] = [
 		description: 'Full-body warm-up movement.',
 		instructions: 'Jump the feet wide while the arms sweep overhead, then back. Stay light on the feet.',
 		category: 'cardio',
+		customCategory: null,
 		tags: ['warm-up', 'conditioning'],
 		defaultMeasure: { type: 'reps', value: 30 }
 	},
@@ -63,6 +67,7 @@ const EXERCISES: ExerciseInput[] = [
 		instructions:
 			'Drop to a plank, chest to the floor, jump the feet back in, then jump up with the hands overhead. Keep the pace steady rather than sprinting the first ten.',
 		category: 'cardio',
+		customCategory: null,
 		tags: ['conditioning', 'full body'],
 		defaultMeasure: { type: 'reps', value: 10 }
 	},
@@ -72,6 +77,7 @@ const EXERCISES: ExerciseInput[] = [
 		instructions:
 			'Elbows under the shoulders, hips level with the shoulders, ribs pulled down. Squeeze the glutes and breathe.',
 		category: 'strength',
+		customCategory: null,
 		tags: ['core'],
 		defaultMeasure: { type: 'time', value: 45 }
 	},
@@ -80,6 +86,7 @@ const EXERCISES: ExerciseInput[] = [
 		description: 'Dynamic core and conditioning drill.',
 		instructions: 'From a plank, drive the knees to the chest one at a time. Keep the hips low.',
 		category: 'cardio',
+		customCategory: null,
 		tags: ['core', 'conditioning'],
 		defaultMeasure: { type: 'time', value: 40 }
 	},
@@ -88,6 +95,7 @@ const EXERCISES: ExerciseInput[] = [
 		description: 'Trunk flexion against bodyweight.',
 		instructions: 'Feet anchored or flat, hands at the temples. Sit all the way up, lower with control.',
 		category: 'strength',
+		customCategory: null,
 		tags: ['core'],
 		defaultMeasure: { type: 'reps', value: 20 }
 	},
@@ -96,6 +104,7 @@ const EXERCISES: ExerciseInput[] = [
 		description: 'Conversational-pace running.',
 		instructions: 'Nose breathing, relaxed shoulders. If you cannot hold a conversation, slow down.',
 		category: 'endurance',
+		customCategory: null,
 		tags: ['running'],
 		defaultMeasure: { type: 'distance', value: 3000 }
 	},
@@ -104,6 +113,7 @@ const EXERCISES: ExerciseInput[] = [
 		description: '20-metre shuttles at full effort.',
 		instructions: 'Sprint out, plant, sprint back. Decelerate through the turn rather than into it.',
 		category: 'cardio',
+		customCategory: null,
 		tags: ['running', 'speed'],
 		defaultMeasure: { type: 'distance', value: 200 }
 	},
@@ -112,6 +122,7 @@ const EXERCISES: ExerciseInput[] = [
 		description: 'Ground-based hip opening sequence.',
 		instructions: '90/90 switches, then a deep lunge with a rotation on each side. Move slowly.',
 		category: 'mobility',
+		customCategory: null,
 		tags: ['warm-up', 'mobility'],
 		defaultMeasure: { type: 'time', value: 120 }
 	},
@@ -120,6 +131,7 @@ const EXERCISES: ExerciseInput[] = [
 		description: 'Placed strikes from the edge of the box.',
 		instructions: 'Five strikes to each corner. Plant foot beside the ball, follow through at the target.',
 		category: 'skill',
+		customCategory: null,
 		tags: ['football', 'technique'],
 		defaultMeasure: { type: 'reps', value: 10 }
 	}

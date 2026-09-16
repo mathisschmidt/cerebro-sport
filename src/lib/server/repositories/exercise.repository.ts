@@ -37,6 +37,7 @@ function toRowValues(input: ExerciseInput) {
 		description: input.description,
 		instructions: input.instructions,
 		category: input.category,
+		customCategory: input.customCategory,
 		tags: JSON.stringify(input.tags),
 		defaultMeasureType: measure.type,
 		defaultMeasureValue: measure.value
@@ -50,6 +51,7 @@ export const exerciseRepository = {
 			? or(
 					like(exercises.name, term),
 					like(exercises.description, term),
+					like(exercises.customCategory, term),
 					like(exercises.tags, term)
 				)
 			: undefined;
@@ -131,6 +133,8 @@ export const exerciseRepository = {
 			description: patch.description ?? current.description,
 			instructions: patch.instructions ?? current.instructions,
 			category: patch.category ?? current.category,
+			customCategory:
+				patch.customCategory !== undefined ? patch.customCategory : current.customCategory,
 			tags: patch.tags ?? current.tags,
 			defaultMeasure: patch.defaultMeasure !== undefined ? patch.defaultMeasure : current.defaultMeasure
 		};

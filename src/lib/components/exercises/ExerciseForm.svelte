@@ -1,6 +1,10 @@
 <script lang="ts">
 	import type { Exercise, ExerciseCategory, ExerciseInput } from '$domain/models/exercise.ts';
-	import { EXERCISE_CATEGORY_LABEL, exerciseCategorySchema } from '$domain/models/exercise.ts';
+	import {
+		EXERCISE_CATEGORY_LABEL,
+		customCategoriesOf,
+		exerciseCategorySchema
+	} from '$domain/models/exercise.ts';
 	import type { Measure } from '$domain/models/common.ts';
 	import { api, ApiError } from '$client/api.ts';
 	import { toasts } from '$client/toast.svelte.ts';
@@ -16,17 +20,21 @@
 		open: boolean;
 		/** Absent for a new exercise. */
 		exercise?: Exercise | null;
+		/** The library, so a custom category already in use can be reused rather than retyped. */
+		library?: readonly Pick<Exercise, 'category' | 'customCategory'>[];
 		onsaved: (exercise: Exercise) => void;
 	}
 
-	let { open = $bindable(), exercise = null, onsaved }: Props = $props();
+	let { open = $bindable(), exercise = null, library = [], onsaved }: Props = $props();
 
 	const CATEGORIES = exerciseCategorySchema.options;
+	const knownCustom = $derived(customCategoriesOf(library));
 
 	let name = $state('');
 	let description = $state('');
 	let instructions = $state('');
 	let category = $state<ExerciseCategory>('other');
+	let customCategory = $state('');
 	let tagsText = $state('');
 	let hasDefault = $state(false);
 	let defaultMeasure = $state<Measure>({ type: 'reps', value: 10 });
@@ -40,6 +48,7 @@
 		description = exercise?.description ?? '';
 		instructions = exercise?.instructions ?? '';
 		category = exercise?.category ?? 'other';
+		customCategory = exercise?.customCategory ?? '';
 		tagsText = exercise?.tags.join(', ') ?? '';
 		hasDefault = Boolean(exercise?.defaultMeasure);
 		defaultMeasure = exercise?.defaultMeasure ?? { type: 'reps', value: 10 };
@@ -54,6 +63,9 @@
 			description: description.trim(),
 			instructions: instructions.trim(),
 			category,
+			// Only an `other` with something typed in it becomes a category of its
+			// own; anything else stays plain "Other".
+			customCategory: category === 'other' && customCategory.trim() ? customCategory.trim() : null,
 			tags: tagsText
 				.split(',')
 				.map((tag) => tag.trim())
@@ -109,6 +121,31 @@
 			<Field label="Tags" hint="Comma separated" for="exercise-tags">
 				<TextInput id="exercise-tags" bind:value={tagsText} placeholder="upper body, calisthenics" />
 			</Field>
+
+			{#if category === 'other'}
+				<Field
+					label="Category name"
+					hint="Optional — leave it empty to stay in Other"
+					error={errors.customCategory}
+					for="exercise-custom-category"
+					class="sm:col-span-2"
+				>
+					<TextInput
+						id="exercise-custom-category"
+						bind:value={customCategory}
+						placeholder="Recovery"
+						list="exercise-custom-categories"
+						invalid={Boolean(errors.customCategory)}
+						autocomplete="off"
+						maxlength={40}
+					/>
+					<datalist id="exercise-custom-categories">
+						{#each knownCustom as known (known)}
+							<option value={known}></option>
+						{/each}
+					</datalist>
+				</Field>
+			{/if}
 		</div>
 
 		<Field label="Description" hint="What the movement is" for="exercise-description">

@@ -5,6 +5,7 @@ import type {
 	ExercisePatch,
 	ExerciseWithUsage
 } from '$domain/models/exercise.ts';
+import { normalizeCategory } from '$domain/models/exercise.ts';
 import { exerciseRepository } from '../repositories/exercise.repository.ts';
 import { conflict, notFound } from '../http/errors.ts';
 
@@ -31,14 +32,23 @@ export const exerciseService = {
 		if (exerciseRepository.findByName(userId, input.name)) {
 			throw conflict(`An exercise named "${input.name}" already exists`, { name: 'Already used' });
 		}
-		return exerciseRepository.create(userId, input);
+		return exerciseRepository.create(userId, { ...input, ...normalizeCategory(input) });
 	},
 
 	update(userId: string, id: string, patch: ExercisePatch): Exercise {
 		if (patch.name && exerciseRepository.findByName(userId, patch.name, id)) {
 			throw conflict(`An exercise named "${patch.name}" already exists`, { name: 'Already used' });
 		}
-		const updated = exerciseRepository.update(userId, id, patch);
+		const current = exerciseRepository.findById(userId, id);
+		if (!current) throw notFound('Exercise not found');
+		// A patch may move the category, name a custom one, or both, so the pair is
+		// normalised against the merged values rather than against the patch alone.
+		const category = normalizeCategory({
+			category: patch.category ?? current.category,
+			customCategory:
+				patch.customCategory !== undefined ? patch.customCategory : current.customCategory
+		});
+		const updated = exerciseRepository.update(userId, id, { ...patch, ...category });
 		if (!updated) throw notFound('Exercise not found');
 		return updated;
 	},
