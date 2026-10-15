@@ -20,6 +20,8 @@
 		trash: '<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/>',
 		pencil: '<path d="M4 20h4L20 8l-4-4L4 16z"/>',
 		search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+		filter: '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
+		tag: '<path d="M3 12.5V4a1 1 0 0 1 1-1h8.5L21 11.5 12.5 20z"/><path d="M7.5 7.5v.01"/>',
 		eye: '<path d="M2 12s3.7-7 10-7 10 7 10 7-3.7 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
 		eyeOff: '<path d="M10.7 6.2A10.6 10.6 0 0 1 12 6c6.3 0 10 6 10 6a18.4 18.4 0 0 1-3.2 3.8"/><path d="M6.5 6.7A18.2 18.2 0 0 0 2 12s3.7 6 10 6a10 10 0 0 0 4.2-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="m3 3 18 18"/>',
 		clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',

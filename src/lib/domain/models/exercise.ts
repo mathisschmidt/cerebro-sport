@@ -101,3 +101,113 @@ export const exerciseWithUsageSchema = exerciseSchema.extend({
 	sessionCount: z.number().int().min(0)
 });
 export type ExerciseWithUsage = z.infer<typeof exerciseWithUsageSchema>;
+
+/** The tag half of an exercise, for helpers that only look at tags. */
+type TagFields = Pick<ExerciseInput, 'tags'>;
+
+/**
+ * A stable key for the category facet. A built-in is keyed by its own value; a
+ * category of the athlete's own making is keyed by its name folded to lower
+ * case, so "Recovery" and "recovery" are one filter rather than two.
+ */
+export function categoryKeyOf(fields: CategoryFields): string {
+	const custom = fields.customCategory?.trim();
+	return custom ? `custom:${custom.toLowerCase()}` : fields.category;
+}
+
+/** One choice in the category facet: what to match on, and what to show. */
+export interface CategoryOption {
+	key: string;
+	label: string;
+}
+
+/**
+ * The categories a library actually uses — built-ins in their declared order,
+ * then custom ones alphabetically. Only what is in use, so no chip can filter
+ * the list down to nothing.
+ */
+export function categoryOptionsOf(exercises: readonly CategoryFields[]): CategoryOption[] {
+	const used = new Set(exercises.map(categoryKeyOf));
+	return [
+		...exerciseCategorySchema.options
+			.filter((category) => used.has(category))
+			.map((category) => ({ key: category, label: EXERCISE_CATEGORY_LABEL[category] })),
+		...customCategoriesOf(exercises).map((name) => ({
+			key: `custom:${name.toLowerCase()}`,
+			label: name
+		}))
+	];
+}
+
+/**
+ * Every tag in a library, de-duplicated case-insensitively and sorted. Like
+ * custom categories, the set of tags is simply the distinct values across the
+ * library — there is no table of them to keep in step.
+ */
+export function tagsOf(exercises: readonly TagFields[]): string[] {
+	const seen = new Map<string, string>();
+	for (const exercise of exercises) {
+		for (const raw of exercise.tags) {
+			const tag = raw.trim();
+			const key = tag.toLowerCase();
+			if (tag && !seen.has(key)) seen.set(key, tag);
+		}
+	}
+	return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * How the library narrows its exercise list. Within a facet the selections are
+ * alternatives — two categories means either of them; across facets they
+ * combine — a category *and* a tag *and* the search term.
+ */
+export interface ExerciseFilter {
+	/** Free text, matched against name, description, category and tags. */
+	search: string;
+	/** Category keys, as `categoryKeyOf` produces them. */
+	categories: readonly string[];
+	/** Tag names, matched case-insensitively. */
+	tags: readonly string[];
+}
+
+export const EMPTY_EXERCISE_FILTER: ExerciseFilter = { search: '', categories: [], tags: [] };
+
+/** Is anything actually being filtered? Drives "no results" wording and the badge. */
+export function isExerciseFilterActive(filter: ExerciseFilter): boolean {
+	return (
+		filter.search.trim().length > 0 || filter.categories.length > 0 || filter.tags.length > 0
+	);
+}
+
+/** Enough of an exercise to filter it — so a summary or a full row both qualify. */
+type FilterableExercise = CategoryFields & TagFields & Pick<ExerciseInput, 'name' | 'description'>;
+
+/** Does one exercise survive the filter? Pure, so every caller agrees on the rules. */
+export function matchesExerciseFilter(
+	exercise: FilterableExercise,
+	filter: ExerciseFilter
+): boolean {
+	const term = filter.search.trim().toLowerCase();
+	if (term) {
+		const haystack = [
+			exercise.name,
+			exercise.description,
+			exerciseCategoryLabel(exercise),
+			...exercise.tags
+		]
+			.join(' ')
+			.toLowerCase();
+		if (!haystack.includes(term)) return false;
+	}
+
+	if (filter.categories.length > 0 && !filter.categories.includes(categoryKeyOf(exercise))) {
+		return false;
+	}
+
+	if (filter.tags.length > 0) {
+		const own = new Set(exercise.tags.map((tag) => tag.trim().toLowerCase()));
+		if (!filter.tags.some((tag) => own.has(tag.trim().toLowerCase()))) return false;
+	}
+
+	return true;
+}

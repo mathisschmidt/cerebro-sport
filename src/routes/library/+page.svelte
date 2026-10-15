@@ -2,7 +2,12 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { Exercise, ExerciseWithUsage } from '$domain/models/exercise.ts';
-	import { exerciseCategoryLabel } from '$domain/models/exercise.ts';
+	import {
+		categoryOptionsOf,
+		isExerciseFilterActive,
+		matchesExerciseFilter,
+		tagsOf
+	} from '$domain/models/exercise.ts';
 	import type { RoutineDetail } from '$domain/models/routine.ts';
 	import { formatDuration } from '$domain/models/common.ts';
 	import { api, ApiError } from '$client/api.ts';
@@ -14,6 +19,7 @@
 	import Icon from '$components/ui/Icon.svelte';
 	import SegmentedControl from '$components/ui/SegmentedControl.svelte';
 	import TextInput from '$components/ui/TextInput.svelte';
+	import ExerciseFilters from '$components/exercises/ExerciseFilters.svelte';
 	import ExerciseForm from '$components/exercises/ExerciseForm.svelte';
 	import ExerciseRow from '$components/exercises/ExerciseRow.svelte';
 	import RoutineForm from '$components/routines/RoutineForm.svelte';
@@ -43,6 +49,53 @@
 
 	let search = $state('');
 
+	/**
+	 * The two facets, and whether their panel is open. Selections survive a tab
+	 * switch; the button next to the search box carries the count so a filter is
+	 * never applied invisibly.
+	 */
+	let filtersOpen = $state(false);
+	let selectedCategories = $state<string[]>([]);
+	let selectedTags = $state<string[]>([]);
+
+	const categoryOptions = $derived(categoryOptionsOf(data.exercises.items));
+	const tagOptions = $derived(tagsOf(data.exercises.items));
+
+	/**
+	 * Editing away the last exercise with a tag drops its chip; ignoring a
+	 * selection that no longer has an option keeps the list from going
+	 * permanently empty with nothing on screen to explain it.
+	 */
+	const exerciseFilter = $derived({
+		search,
+		categories: selectedCategories.filter((key) =>
+			categoryOptions.some((option) => option.key === key)
+		),
+		tags: selectedTags.filter((tag) => tagOptions.includes(tag))
+	});
+	const facetCount = $derived(exerciseFilter.categories.length + exerciseFilter.tags.length);
+
+	/** What an empty exercise list should say — a chosen facet explains it before the search does. */
+	const noExerciseMatch = $derived(
+		facetCount > 0
+			? {
+					title: 'Nothing matches those filters',
+					description: 'No exercise in your library answers to all of that at once.',
+					clearLabel: 'Clear filters'
+				}
+			: {
+					title: 'Nothing matches that search',
+					description: 'Nothing in your library goes by that name.',
+					clearLabel: 'Clear search'
+				}
+	);
+
+	function clearExerciseFilter() {
+		search = '';
+		selectedCategories = [];
+		selectedTags = [];
+	}
+
 	let exerciseFormOpen = $state(false);
 	let editingExercise = $state<Exercise | null>(null);
 	let deletingExercise = $state<ExerciseWithUsage | null>(null);
@@ -62,11 +115,7 @@
 		data.sessions.items.filter((session) => matches(`${session.name} ${session.description}`))
 	);
 	const visibleExercises = $derived(
-		data.exercises.items.filter((exercise) =>
-			matches(
-				`${exercise.name} ${exercise.description} ${exerciseCategoryLabel(exercise)} ${exercise.tags.join(' ')}`
-			)
-		)
+		data.exercises.items.filter((exercise) => matchesExerciseFilter(exercise, exerciseFilter))
 	);
 	const visibleRoutines = $derived(
 		data.routines.filter((routine) => matches(`${routine.name} ${routine.sessionName}`))
@@ -127,6 +176,38 @@
 		</span>
 		<TextInput bind:value={search} placeholder="Search…" class="pl-9" autocomplete="off" />
 	</div>
+	{#if tab === 'exercises'}
+		<button
+			type="button"
+			class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-[10px] border px-3 text-[13px] font-medium transition-colors
+			{filtersOpen || facetCount > 0
+				? 'border-accent bg-accent-soft text-accent'
+				: 'border-line text-ink-muted hover:border-line-strong hover:text-ink'}"
+			aria-expanded={filtersOpen}
+			aria-controls="exercise-filters"
+			onclick={() => (filtersOpen = !filtersOpen)}
+		>
+			<Icon name="filter" size={14} />
+			Filters
+			{#if facetCount > 0}
+				<span class="bg-accent text-accent-ink grid size-4 place-items-center rounded-full text-[10px]">
+					{facetCount}
+				</span>
+			{/if}
+		</button>
+	{/if}
+</div>
+
+<!-- The wrapper stays put so the button's `aria-controls` always resolves. -->
+<div id="exercise-filters">
+	{#if tab === 'exercises' && filtersOpen}
+		<ExerciseFilters
+			categories={categoryOptions}
+			tags={tagOptions}
+			bind:selectedCategories
+			bind:selectedTags
+		/>
+	{/if}
 </div>
 
 {#if tab === 'sessions'}
@@ -186,21 +267,29 @@
 	{#if visibleExercises.length === 0}
 		<EmptyState
 			icon="dumbbell"
-			title={data.exercises.items.length === 0 ? 'No exercises yet' : 'Nothing matches that search'}
-			description="Pull-ups, jumping jacks, a 400m sprint, a free-kick drill — anything you repeat."
+			title={data.exercises.items.length === 0 ? 'No exercises yet' : noExerciseMatch.title}
+			description={data.exercises.items.length === 0
+				? 'Pull-ups, jumping jacks, a 400m sprint, a free-kick drill — anything you repeat.'
+				: noExerciseMatch.description}
 		>
 			{#snippet action()}
-				<Button
-					variant="primary"
-					size="sm"
-					icon="plus"
-					onclick={() => {
-						editingExercise = null;
-						exerciseFormOpen = true;
-					}}
-				>
-					Add an exercise
-				</Button>
+				{#if isExerciseFilterActive(exerciseFilter)}
+					<Button size="sm" icon="close" onclick={clearExerciseFilter}>
+						{noExerciseMatch.clearLabel}
+					</Button>
+				{:else}
+					<Button
+						variant="primary"
+						size="sm"
+						icon="plus"
+						onclick={() => {
+							editingExercise = null;
+							exerciseFormOpen = true;
+						}}
+					>
+						Add an exercise
+					</Button>
+				{/if}
 			{/snippet}
 		</EmptyState>
 	{:else}
