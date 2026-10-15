@@ -57,10 +57,13 @@
 		pickerOpen = true;
 	}
 
-	function addItem(exercise: Exercise) {
+	function addItems(picked: Exercise[]) {
 		const block = draft.blocks[pickerBlockIndex];
 		if (!block) return;
-		block.items = [...block.items, emptyItem(exercise.id, exercise.defaultMeasure)];
+		block.items = [
+			...block.items,
+			...picked.map((exercise) => emptyItem(exercise.id, exercise.defaultMeasure))
+		];
 	}
 
 	function addBlock() {
@@ -174,7 +177,7 @@
 <ExercisePicker
 	bind:open={pickerOpen}
 	exercises={library}
-	onpick={addItem}
+	onpick={addItems}
 	oncreate={() => (exerciseFormOpen = true)}
 />
 
@@ -183,6 +186,6 @@
 	{library}
 	onsaved={(exercise) => {
 		library = [...library, exercise].sort((a, b) => a.name.localeCompare(b.name));
-		addItem(exercise);
+		addItems([exercise]);
 	}}
 />

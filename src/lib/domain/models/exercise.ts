@@ -179,6 +179,26 @@ export function isExerciseFilterActive(filter: ExerciseFilter): boolean {
 	);
 }
 
+/**
+ * The filter as chosen, minus any selection whose option has since disappeared.
+ * Editing away the last exercise with a tag drops its chip; ignoring the
+ * selection keeps the list from going permanently empty with nothing on screen
+ * to explain it.
+ */
+export function effectiveExerciseFilter(
+	filter: ExerciseFilter,
+	categoryOptions: readonly CategoryOption[],
+	tagOptions: readonly string[]
+): ExerciseFilter {
+	return {
+		search: filter.search,
+		categories: filter.categories.filter((key) =>
+			categoryOptions.some((option) => option.key === key)
+		),
+		tags: filter.tags.filter((tag) => tagOptions.includes(tag))
+	};
+}
+
 /** Enough of an exercise to filter it — so a summary or a full row both qualify. */
 type FilterableExercise = CategoryFields & TagFields & Pick<ExerciseInput, 'name' | 'description'>;
 

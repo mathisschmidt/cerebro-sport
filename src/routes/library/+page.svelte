@@ -4,6 +4,7 @@
 	import type { Exercise, ExerciseWithUsage } from '$domain/models/exercise.ts';
 	import {
 		categoryOptionsOf,
+		effectiveExerciseFilter,
 		isExerciseFilterActive,
 		matchesExerciseFilter,
 		tagsOf
@@ -19,6 +20,7 @@
 	import Icon from '$components/ui/Icon.svelte';
 	import SegmentedControl from '$components/ui/SegmentedControl.svelte';
 	import TextInput from '$components/ui/TextInput.svelte';
+	import ExerciseFilterButton from '$components/exercises/ExerciseFilterButton.svelte';
 	import ExerciseFilters from '$components/exercises/ExerciseFilters.svelte';
 	import ExerciseForm from '$components/exercises/ExerciseForm.svelte';
 	import ExerciseRow from '$components/exercises/ExerciseRow.svelte';
@@ -61,18 +63,13 @@
 	const categoryOptions = $derived(categoryOptionsOf(data.exercises.items));
 	const tagOptions = $derived(tagsOf(data.exercises.items));
 
-	/**
-	 * Editing away the last exercise with a tag drops its chip; ignoring a
-	 * selection that no longer has an option keeps the list from going
-	 * permanently empty with nothing on screen to explain it.
-	 */
-	const exerciseFilter = $derived({
-		search,
-		categories: selectedCategories.filter((key) =>
-			categoryOptions.some((option) => option.key === key)
-		),
-		tags: selectedTags.filter((tag) => tagOptions.includes(tag))
-	});
+	const exerciseFilter = $derived(
+		effectiveExerciseFilter(
+			{ search, categories: selectedCategories, tags: selectedTags },
+			categoryOptions,
+			tagOptions
+		)
+	);
 	const facetCount = $derived(exerciseFilter.categories.length + exerciseFilter.tags.length);
 
 	/** What an empty exercise list should say — a chosen facet explains it before the search does. */
@@ -177,24 +174,7 @@
 		<TextInput bind:value={search} placeholder="Search…" class="pl-9" autocomplete="off" />
 	</div>
 	{#if tab === 'exercises'}
-		<button
-			type="button"
-			class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-[10px] border px-3 text-[13px] font-medium transition-colors
-			{filtersOpen || facetCount > 0
-				? 'border-accent bg-accent-soft text-accent'
-				: 'border-line text-ink-muted hover:border-line-strong hover:text-ink'}"
-			aria-expanded={filtersOpen}
-			aria-controls="exercise-filters"
-			onclick={() => (filtersOpen = !filtersOpen)}
-		>
-			<Icon name="filter" size={14} />
-			Filters
-			{#if facetCount > 0}
-				<span class="bg-accent text-accent-ink grid size-4 place-items-center rounded-full text-[10px]">
-					{facetCount}
-				</span>
-			{/if}
-		</button>
+		<ExerciseFilterButton bind:open={filtersOpen} count={facetCount} controls="exercise-filters" />
 	{/if}
 </div>
 
