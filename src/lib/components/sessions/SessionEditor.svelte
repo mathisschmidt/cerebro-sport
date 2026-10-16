@@ -11,6 +11,7 @@
 		emptyItem,
 		draftKey,
 		move,
+		planChanged,
 		validateDraft,
 		type SessionDraft
 	} from '$domain/services/session-draft.ts';
@@ -19,6 +20,7 @@
 	import Button from '$components/ui/Button.svelte';
 	import Card from '$components/ui/Card.svelte';
 	import Field from '$components/ui/Field.svelte';
+	import Modal from '$components/ui/Modal.svelte';
 	import TextArea from '$components/ui/TextArea.svelte';
 	import TextInput from '$components/ui/TextInput.svelte';
 	import ExerciseForm from '$components/exercises/ExerciseForm.svelte';
@@ -30,9 +32,11 @@
 		/** Absent when creating. */
 		session?: SessionDetail | null;
 		exercises: Exercise[];
+		/** Recorded runs of this session — what a history reset would delete. */
+		historyCount?: number;
 	}
 
-	let { session = null, exercises: initialExercises }: Props = $props();
+	let { session = null, exercises: initialExercises, historyCount = 0 }: Props = $props();
 
 	/**
 	 * Both are seeded once and then owned by the editor: re-deriving the draft
@@ -44,6 +48,11 @@
 	let library = $state<Exercise[]>(initialExercises);
 	let errors = $state<Record<string, string>>({});
 	let saving = $state(false);
+	let resetOpen = $state(false);
+
+	/** The session as loaded, to tell whether an edit changed what is run. */
+	// svelte-ignore state_referenced_locally
+	const original = session ? draftToInput(draftFromSession(session)) : null;
 
 	let pickerOpen = $state(false);
 	let pickerBlockIndex = $state(0);
@@ -57,10 +66,13 @@
 		pickerOpen = true;
 	}
 
-	function addItem(exercise: Exercise) {
+	function addItems(picked: Exercise[]) {
 		const block = draft.blocks[pickerBlockIndex];
 		if (!block) return;
-		block.items = [...block.items, emptyItem(exercise.id, exercise.defaultMeasure)];
+		block.items = [
+			...block.items,
+			...picked.map((exercise) => emptyItem(exercise.id, exercise.defaultMeasure))
+		];
 	}
 
 	function addBlock() {
@@ -85,13 +97,27 @@
 			return;
 		}
 
+		// Past runs timed the session as it was. Once what is run changes, offer
+		// to start its history over rather than compare against a different session.
+		if (original && historyCount > 0 && planChanged(original, draftToInput(draft))) {
+			resetOpen = true;
+			return;
+		}
+		await persist(false);
+	}
+
+	async function persist(resetHistory: boolean) {
 		saving = true;
 		try {
 			const input = draftToInput(draft);
 			const saved = session
 				? await api.sessions.update(session.id, input)
 				: await api.sessions.create(input);
-			toasts.success(session ? 'Session saved' : 'Session created');
+			if (resetHistory) await api.sessions.resetHistory(saved.id);
+			resetOpen = false;
+			toasts.success(
+				resetHistory ? 'Session saved — history reset' : session ? 'Session saved' : 'Session created'
+			);
 			await goto(`/library/sessions/${saved.id}`, { invalidateAll: true });
 		} catch (error) {
 			if (error instanceof ApiError) {
@@ -174,15 +200,33 @@
 <ExercisePicker
 	bind:open={pickerOpen}
 	exercises={library}
-	onpick={addItem}
+	onpick={addItems}
 	oncreate={() => (exerciseFormOpen = true)}
 />
+
+<Modal bind:open={resetOpen} title="Reset this session's history?" size="sm">
+	<p class="text-ink-muted text-sm leading-relaxed">
+		You changed what this session runs, so its {historyCount} past run{historyCount > 1 ? 's' : ''}
+		timed a different session. Reset to delete {historyCount > 1 ? 'them' : 'it'} and start its
+		stats, progress chart and history over. Keep to compare new runs against the old ones.
+	</p>
+	<p class="text-ink-subtle mt-2 text-[13px] leading-relaxed">
+		Routines you ticked off stay ticked, so your streak and calendar are kept.
+	</p>
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (resetOpen = false)} disabled={saving}>Cancel</Button>
+		<Button variant="secondary" onclick={() => persist(false)} disabled={saving}>
+			Keep history
+		</Button>
+		<Button variant="danger" loading={saving} onclick={() => persist(true)}>Reset history</Button>
+	{/snippet}
+</Modal>
 
 <ExerciseForm
 	bind:open={exerciseFormOpen}
 	{library}
 	onsaved={(exercise) => {
 		library = [...library, exercise].sort((a, b) => a.name.localeCompare(b.name));
-		addItem(exercise);
+		addItems([exercise]);
 	}}
 />

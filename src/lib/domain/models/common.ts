@@ -72,12 +72,29 @@ export function formatMeasure(measure: Measure): string {
 	}
 }
 
+/** A duration in seconds, split the way it is said: 1 h 30 min 30 s. */
+export interface DurationParts {
+	hours: number;
+	minutes: number;
+	seconds: number;
+}
+
+export function durationParts(totalSeconds: number): DurationParts {
+	const safe = Math.max(0, Math.round(totalSeconds));
+	return {
+		hours: Math.floor(safe / 3600),
+		minutes: Math.floor((safe % 3600) / 60),
+		seconds: safe % 60
+	};
+}
+
+export function secondsOf(parts: DurationParts): number {
+	return parts.hours * 3600 + parts.minutes * 60 + parts.seconds;
+}
+
 /** `M:SS`, or `H:MM:SS` past an hour. Used everywhere a duration is shown. */
 export function formatClock(totalSeconds: number): string {
-	const safe = Math.max(0, Math.round(totalSeconds));
-	const hours = Math.floor(safe / 3600);
-	const minutes = Math.floor((safe % 3600) / 60);
-	const seconds = safe % 60;
+	const { hours, minutes, seconds } = durationParts(totalSeconds);
 	const pad = (n: number) => String(n).padStart(2, '0');
 	return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
 }

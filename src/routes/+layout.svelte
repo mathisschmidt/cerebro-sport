@@ -3,19 +3,73 @@
 	import { page } from '$app/state';
 	import Icon, { type IconName } from '$components/ui/Icon.svelte';
 	import Toaster from '$components/ui/Toaster.svelte';
+	import Button from '$components/ui/Button.svelte';
+	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
+	import SyncStatus from '$components/shared/SyncStatus.svelte';
 	import { theme } from '$client/theme.svelte.ts';
 	import { authClient } from '$client/auth.ts';
+	import {
+		connectivity,
+		outbox,
+		refreshOffline,
+		resetOffline,
+		snapshot,
+		startOffline,
+		updates
+	} from '$client/offline/index.ts';
 	import { USER_ROLE_LABEL } from '$domain/models/user.ts';
-	import { goto } from '$app/navigation';
-	import type { Snippet } from 'svelte';
+	import { formatDateTimeLabel } from '$domain/services/date.ts';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { onMount, type Snippet } from 'svelte';
 	import type { LayoutData } from './$types.ts';
 
 	let { children, data }: { children: Snippet; data: LayoutData } = $props();
 
 	let signingOut = $state(false);
+	let unsyncedSignOutOpen = $state(false);
 
+	// Offline training follows the signed-in account: its runs, its queue, its copy.
+	$effect(() => {
+		if (data.user) void startOffline(data.user.id);
+	});
+
+	onMount(() => {
+		// Runs synced: the pages showing history and metrics are stale now. Never
+		// on the run page, whose load would see its own logged steps as a left run.
+		const stopDelivered = outbox.onDelivered(() => {
+			if (!page.url.pathname.startsWith('/run/')) void invalidateAll();
+		});
+		const stopReconnect = connectivity.onReconnect(refreshOffline);
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') refreshOffline();
+		};
+		document.addEventListener('visibilitychange', onVisible);
+		return () => {
+			stopDelivered();
+			stopReconnect();
+			document.removeEventListener('visibilitychange', onVisible);
+		};
+	});
+
+	/** Runs not on the server yet would be lost with the device's data: deliver, or ask first. */
 	async function signOut() {
+		await outbox.flush();
+		if (outbox.pending + outbox.rejected > 0) {
+			unsyncedSignOutOpen = true;
+			return;
+		}
+		await completeSignOut();
+	}
+
+	const unsyncedMessage = $derived.by(() => {
+		const count = outbox.pending + outbox.rejected;
+		const runs = count === 1 ? '1 run' : `${count} runs`;
+		return `${runs} from this device ${count === 1 ? 'has' : 'have'} not reached the server yet. Signing out deletes ${count === 1 ? 'it' : 'them'} for good — get back online first to keep ${count === 1 ? 'it' : 'them'}.`;
+	});
+
+	async function completeSignOut() {
 		signingOut = true;
+		await resetOffline();
 		await authClient.signOut();
 		await goto('/login', { invalidateAll: true });
 		signingOut = false;
@@ -42,8 +96,9 @@
 	 * The runner takes the whole screen, and the sign-in screens have no app to
 	 * navigate yet — both render without any chrome.
 	 */
+	const running = $derived(page.url.pathname.startsWith('/run/'));
 	const immersive = $derived(
-		page.url.pathname.startsWith('/run/') ||
+		running ||
 			page.url.pathname === '/login' ||
 			page.url.pathname === '/register'
 	);
@@ -102,6 +157,7 @@
 					</a>
 				{/if}
 
+				<SyncStatus class="mx-3 mb-2 self-start" />
 				<button
 					type="button"
 					class="text-ink-muted hover:bg-surface hover:text-ink flex h-10 w-full items-center gap-3 rounded-[10px] px-3 text-sm font-medium transition-colors"
@@ -161,6 +217,7 @@
 					<span class="text-sm font-semibold">Cerebro&nbsp;Sport</span>
 				</a>
 				<div class="-mr-2 flex items-center">
+					<SyncStatus class="mr-1" />
 					{#if data.user}
 						<a
 							href="/account"
@@ -206,6 +263,32 @@
 			</header>
 
 			<main class="mx-auto w-full max-w-5xl flex-1 px-4 pt-4 pb-28 sm:px-6 lg:px-8 lg:py-8">
+				{#if updates.ready}
+					<div
+						class="border-accent/40 bg-accent-soft mb-4 flex items-center gap-3 rounded-xl border px-3.5 py-2.5"
+						role="status"
+					>
+						<span class="text-ink min-w-0 flex-1 text-[13px]">A new version of the app is ready.</span>
+						<Button variant="primary" size="sm" onclick={() => updates.apply()}>Reload</Button>
+					</div>
+				{/if}
+				{#if !connectivity.online}
+					<div
+						class="border-line bg-surface-sunken text-ink-muted mb-4 flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-[13px]"
+						role="status"
+					>
+						<span class="text-ink-subtle mt-0.5 shrink-0"><Icon name="alert" size={15} /></span>
+						<span>
+							You are offline. You can still run a session — it syncs when you are back.
+							{#if snapshot.current}
+								Everything else shows what was saved {formatDateTimeLabel(snapshot.current.generatedAt)}
+								and cannot be changed until then.
+							{:else}
+								Everything else shows what was last loaded and cannot be changed until then.
+							{/if}
+						</span>
+					</div>
+				{/if}
 				{@render children()}
 			</main>
 		</div>
@@ -228,5 +311,14 @@
 		</nav>
 	</div>
 {/if}
+
+<ConfirmDialog
+	bind:open={unsyncedSignOutOpen}
+	title="Sign out with runs not synced?"
+	message={unsyncedMessage}
+	confirmLabel="Sign out anyway"
+	danger
+	onconfirm={completeSignOut}
+/>
 
 <Toaster />

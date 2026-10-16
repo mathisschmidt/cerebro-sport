@@ -10,7 +10,11 @@
 		<meta name="description" content="Plan, run and measure your training — any sport." />
 		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-title" content="Cerebro Sport" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
+		<!-- iOS ignores the manifest's icons and SVG: it needs this full-bleed PNG. -->
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
 		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
 		<script>
 			// Applied before first paint so the correct theme never flashes.

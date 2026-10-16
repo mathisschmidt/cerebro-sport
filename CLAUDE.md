@@ -74,11 +74,76 @@ handler a `SessionUser`; page loads use `requireUser` / `requireAdmin` from
 ## Charts
 
 Load the `dataviz` skill before adding or changing one. The palette in
-`app.css` (`--viz-*`) was validated with that skill's script — monotone
-lightness, ≥0.06 lightness gaps between ramp steps, and ≥2:1 contrast for the
-step nearest the surface, in both themes. If you change a chart colour, re-run
-the validator rather than eyeballing it. One series means no legend; axis ticks
-round to clean durations via `$domain/services/scale.ts`.
+`app.css` (`--viz-*`) was validated with that skill's script, in both themes:
+contrast against the surface, and for `--viz-good` / `--viz-critical` —
+the training calendar's only two colours — colour-blind separation as a pair.
+If you change a chart colour, re-run the validator rather than eyeballing it.
+One series means no legend; axis ticks round to clean durations via
+`$domain/services/scale.ts`.
+
+## Runs and metrics
+
+The rules are in the README ("How runs are measured"); in code they live in
+exactly one place each — keep it that way:
+
+- **A run's outcome** is `workoutOutcome()` in `lib/domain/models/workout.ts`
+  (green / green / yellow / red at 0, ≤30%, >30%, >50% of steps missed).
+  `countsInSessionStats()` is the only gate for a session's duration stats;
+  `isRecorded()` the only gate for counting a run at all. Screens render an
+  outcome through `OutcomeBadge` and never re-derive a threshold.
+- **A calendar day's state** is computed in `buildStreakMetrics`; the
+  calendar component only maps it to a colour.
+- **A run is never resumed.** The run page's load ends any run it finds with
+  steps already logged, and the runner always starts at step one. Do not add a
+  resume path back.
+
+## Offline
+
+Training works offline; everything else is read-only offline. The README's
+"Training offline" section has the behaviour; the shape is:
+
+- **Runs are local-first — one path, online or not.** `lib/client/offline/`
+  creates every run on the phone (`runs.start`), stores it in IndexedDB, and
+  queues start, steps and finish in the outbox, which delivers in order. Never
+  add a second, "online" path that calls `/api/workouts` directly — the two
+  would drift. Everything else (library, routines, coach…) stays online-only on
+  purpose: no sync engine, no offline edits.
+- **Every workout write is idempotent.** A start carries the phone's `id`,
+  `startedAt` and `plan`; a replayed start returns the existing workout. Steps
+  are an upsert on step index and are accepted even after the run ended (another
+  device may have closed it). `finish` carries the phone's `completedAt`.
+- **The phone's plan is stored as-is.** That is the one exception to "never let
+  the client send a resolved plan": a workout's plan is a record of what was
+  run, not an instruction to the library. It is validated against
+  `sessionPlanSchema`, must name the same session, and is bounded in size.
+- **A start ends only older open runs, and never deletes them** — another phone
+  may still hold their steps. Empty, they count nowhere (`isRecorded`).
+- **Today is rebuilt on the phone with `buildOccurrences`** (the server's own
+  function) from the snapshot's rules. Day logic belongs there, nowhere else.
+- **The run page is `ssr = false` with a universal `+page.ts`.** It must open
+  with no network, so it can have no `+page.server.ts`.
+
+## Things that will bite (offline)
+
+- **IndexedDB cannot store a Svelte proxy.** State that ends up in IndexedDB is
+  `$state.raw`, and `commit()` snapshots values before writing. A plain `$state`
+  there fails with "Proxy object could not be cloned".
+- **Never `invalidateAll()` on the run page.** Its load would re-run, see the
+  steps just logged and end the run as left. The layout skips it there.
+- **The heartbeat tells a live run from a left one.** The run page writes
+  `cerebro-sport:active-run` every few seconds; opening the app ends runs whose
+  beat is stale. `pagehide` clears it synchronously — keep that, or a reload
+  looks like a second tab and the run is never ended.
+- **Sign-out must wipe** IndexedDB, the `pages-*` caches and the heartbeat
+  (`resetOffline`). Cached pages hold the athlete's data.
+- **The service worker never `skipWaiting`s by itself.** An update waits and the
+  layout offers to reload, never on the run page.
+- **`__data.json` redirects are 200s.** A signed-out data request answers
+  `{"type":"redirect"}` with status 200; the worker must not cache it, or
+  offline the app would send the athlete to sign-in forever.
+- **E2E behind a non-default port** needs `BETTER_AUTH_URL` set to that origin,
+  or Better Auth answers sign-out with 403 "Invalid origin". Compose always sets
+  it.
 
 ## The training pack format
 
@@ -163,11 +228,16 @@ file.
   change on every save. Nothing may store those ids long-term — this is exactly
   why workouts snapshot their plan.
 - **`workouts` has no FK to `sessions`** on purpose. Do not add one.
-- **`totalMs` is the sum of step durations**, not wall clock. Keep it derived in
-  `refreshTotals`; never set it from `Date.now()` differences.
-- **Step keys are the join key for progress metrics.** Changing how
-  `buildPlan` builds `key` silently disconnects every existing workout from its
-  history.
+- **`totalMs` is training time: rests in, pauses out** — the sum of the step
+  logs' `durationMs`, each of which already excludes paused time. Keep it derived
+  in `refreshTotals`, and keep the runner's `totalElapsedMs` the same sum; never
+  set it from `Date.now()` differences on the server.
+- **`finish` is idempotent and may delete.** A closed tab sends it by beacon,
+  possibly after the leave dialog already did; ending a run with nothing done
+  deletes it and returns `null`.
+- **Step keys are stored on every step log** and stay stable across
+  executions. No metric reads them today, but changing how `buildPlan` builds
+  `key` would make any future per-step history impossible to rebuild.
 - **Occurrence rows only exist for deviations.** `pending` is represented by the
   absence of a row; `resolveOccurrence('pending')` deletes.
 - **Cross-account reads return 404, not 403.** Scoping happens in the `where`
@@ -194,6 +264,12 @@ file.
   import over a missing description helps nobody.
 
 ## Verifying a change
+
+Anything touching runs, the outbox or the service worker needs a production
+build (`npm run build && node build`): the service worker does not behave the
+same under `npm run dev`. Test offline by stopping the server *and* with the
+browser's offline mode — they exercise different paths (failed requests versus
+`navigator.onLine`).
 
 ```bash
 npm run check          # types + templates

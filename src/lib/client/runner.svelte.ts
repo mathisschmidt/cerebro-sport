@@ -1,6 +1,7 @@
 import type { PlanStep, SessionPlan } from '$domain/models/plan.ts';
 import type { WorkoutStepLogInput } from '$domain/models/workout.ts';
-import { api } from './api.ts';
+import { beat, runs, stopBeat } from './offline/index.ts';
+import { sound } from './sound.svelte.ts';
 
 /**
  * Drives one workout.
@@ -8,14 +9,17 @@ import { api } from './api.ts';
  * Two rules shape everything here:
  *  - Time is measured from timestamps, never accumulated from ticks, so a
  *    backgrounded phone tab does not lose seconds.
- *  - Every finished step is posted immediately, and a failed post is retried
- *    rather than dropped. A session interrupted by a dead battery keeps
- *    everything up to that point.
+ *  - Every finished step is stored on the phone the moment it ends, and the
+ *    outbox delivers it — now if online, later if not. A session interrupted
+ *    by a dead battery or a lost signal keeps everything up to that point.
  */
 
 export type RunnerPhase = 'running' | 'paused' | 'finished';
 
 const TICK_MS = 100;
+
+/** How often the run tells other tabs, and the next app opening, that it is alive. */
+const BEAT_MS = 5_000;
 
 export class WorkoutRunner {
 	readonly workoutId: string;
@@ -28,46 +32,36 @@ export class WorkoutRunner {
 	/** Reps actually done, when they differ from the plan. */
 	actualOverride = $state<number | null>(null);
 	finishing = $state(false);
-	/** Running sum of completed step durations — the number the server stores. */
-	measuredMs = $state(0);
 
-	/** Seeds the running total when resuming a workout that already has logs. */
-	seedMeasured(ms: number): void {
-		this.measuredMs = ms;
-	}
+	/**
+	 * Step indexes done rather than skipped, mirroring the server's upsert: a
+	 * step re-run after `back()` replaces its log, so a later skip un-records it.
+	 */
+	#recorded = new Set<number>();
+	/** How many steps are done — whether leaving now has anything worth keeping. */
+	recordedCount = $state(0);
 
 	#now = $state(Date.now());
 	#stepStartedAt = $state(Date.now());
 	#pausedAt: number | null = null;
 	#pausedMs = $state(0);
-	#workoutStartedAt: number;
+	/**
+	 * Time logged per step index, pauses already taken out. Keyed like the
+	 * server's upsert, so a step re-run after `back()` replaces its time.
+	 */
+	#loggedMs = $state<Record<number, number>>({});
 	#stepStartedIso = new Date().toISOString();
 
 	#timer: ReturnType<typeof setInterval> | null = null;
 	#wakeLock: WakeLockSentinel | null = null;
-	/** Step logs whose POST failed, retried on the next step and at finish. */
-	#pending: WorkoutStepLogInput[] = [];
+	/** Local writes, chained so two quick steps never overwrite each other's log. */
+	#writes: Promise<void> = Promise.resolve();
+	#lastBeat = 0;
 
-	constructor(
-		workoutId: string,
-		plan: SessionPlan,
-		startedAt: string,
-		options: { startIndex?: number } = {}
-	) {
+	/** A run always starts at its first step — it is never resumed. */
+	constructor(workoutId: string, plan: SessionPlan) {
 		this.workoutId = workoutId;
 		this.plan = plan;
-		this.#workoutStartedAt = new Date(startedAt).getTime();
-		this.index = Math.min(Math.max(0, options.startIndex ?? 0), Math.max(0, plan.steps.length - 1));
-	}
-
-	/**
-	 * Where to pick a workout back up: the first step with no log yet. Reopening
-	 * an interrupted session has to continue it, not restart it.
-	 */
-	static resumeIndexFrom(plan: SessionPlan, loggedStepIndexes: number[]): number {
-		const logged = new Set(loggedStepIndexes);
-		const next = plan.steps.findIndex((step) => !logged.has(step.index));
-		return next === -1 ? Math.max(0, plan.steps.length - 1) : next;
 	}
 
 	get step(): PlanStep | undefined {
@@ -88,9 +82,14 @@ export class WorkoutRunner {
 		return Math.max(0, this.#now - this.#stepStartedAt - this.#pausedMs - pausedNow);
 	}
 
-	/** Wall clock since the workout started, including pauses. Shown live only. */
+	/**
+	 * Training time so far: every logged step plus the one under way, pauses
+	 * excluded. The same sum the server derives from the step logs, so the
+	 * header, the summary and the metrics all show one number.
+	 */
 	get totalElapsedMs(): number {
-		return Math.max(0, this.#now - this.#workoutStartedAt);
+		const logged = Object.values(this.#loggedMs).reduce((sum, ms) => sum + ms, 0);
+		return logged + (this.phase === 'finished' ? 0 : this.stepElapsedMs);
 	}
 
 	/** Planned length of the current step in ms, or 0 when it is self-paced. */
@@ -137,6 +136,10 @@ export class WorkoutRunner {
 
 	#tick(): void {
 		this.#now = Date.now();
+		if (this.phase !== 'finished' && this.#now - this.#lastBeat > BEAT_MS) {
+			this.#lastBeat = this.#now;
+			beat(this.workoutId);
+		}
 		if (this.phase !== 'running') return;
 		if (this.isCountdown && this.remainingMs === 0) {
 			this.complete();
@@ -164,7 +167,10 @@ export class WorkoutRunner {
 		if (!step || this.phase === 'finished') return;
 
 		const durationMs = this.stepElapsedMs;
-		if (!options.skipped) this.measuredMs += durationMs;
+		this.#loggedMs[step.index] = durationMs;
+		if (options.skipped) this.#recorded.delete(step.index);
+		else this.#recorded.add(step.index);
+		this.recordedCount = this.#recorded.size;
 		this.#enqueue({
 			stepIndex: step.index,
 			stepKey: step.key,
@@ -226,28 +232,43 @@ export class WorkoutRunner {
 	}
 
 	#enqueue(log: WorkoutStepLogInput): void {
-		this.#pending.push(log);
-		void this.flush();
+		this.#writes = this.#writes.then(() => runs.recordStep(this.workoutId, log)).catch(() => {});
 	}
 
-	/** Posts everything queued; anything that fails stays queued for the next try. */
-	async flush(): Promise<void> {
-		const queue = [...this.#pending];
-		this.#pending = [];
-		for (const log of queue) {
-			try {
-				await api.workouts.logStep(this.workoutId, log);
-			} catch {
-				this.#pending.push(log);
-			}
-		}
-	}
-
+	/** Ends the run, kept. Stored at once; the outbox reports it when it can. */
 	async finish(status: 'completed' | 'abandoned', notes = ''): Promise<void> {
 		this.finishing = true;
 		try {
-			await this.flush();
-			await api.workouts.finish(this.workoutId, { status, notes });
+			await this.#writes;
+			await runs.finish(this.workoutId, status, notes);
+		} finally {
+			this.finishing = false;
+		}
+	}
+
+	/**
+	 * The page is going away — a closed tab or a reload. Leaving ends the run:
+	 * complete on the summary screen, left early anywhere else. This is a best
+	 * effort, as a dying page may not finish writing; every step is already
+	 * stored, and the next opening of the app ends a run left behind anyway.
+	 */
+	endOnUnload(): void {
+		// The page is no longer this run's; the next opening must not take it for
+		// a run still open in another tab.
+		stopBeat(this.workoutId);
+		// Nothing done yet: a reload keeps the run, and a run left empty is cleared
+		// by the next opening or the next start.
+		if (this.recordedCount === 0 && this.phase !== 'finished') return;
+		const status = this.phase === 'finished' ? 'completed' : 'abandoned';
+		void this.#writes.then(() => runs.finish(this.workoutId, status));
+	}
+
+	/** Leaves without keeping anything; if the server never heard of the run, it never will. */
+	async discard(): Promise<void> {
+		this.finishing = true;
+		try {
+			await this.#writes;
+			await runs.discard(this.workoutId);
 		} finally {
 			this.finishing = false;
 		}
@@ -280,8 +301,12 @@ export class WorkoutRunner {
 
 let audioContext: AudioContext | null = null;
 
-/** A single short sine blip. Created lazily — browsers block audio before a gesture. */
+/**
+ * A single short sine blip, at the athlete's chosen volume. Created lazily —
+ * browsers block audio before a gesture.
+ */
 export function playTone(frequency: number, durationMs = 120): void {
+	if (sound.muted) return;
 	try {
 		audioContext ??= new AudioContext();
 		if (audioContext.state === 'suspended') void audioContext.resume();
@@ -290,7 +315,7 @@ export function playTone(frequency: number, durationMs = 120): void {
 		oscillator.frequency.value = frequency;
 		oscillator.type = 'sine';
 		gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
-		gain.gain.exponentialRampToValueAtTime(0.18, audioContext.currentTime + 0.01);
+		gain.gain.exponentialRampToValueAtTime(sound.gain, audioContext.currentTime + 0.01);
 		gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + durationMs / 1000);
 		oscillator.connect(gain).connect(audioContext.destination);
 		oscillator.start();

@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { formatDuration } from '$domain/models/common.ts';
 	import { describeRecurrence } from '$domain/models/routine.ts';
-	import { api, ApiError } from '$client/api.ts';
+	import { runs } from '$client/offline/index.ts';
 	import { toasts } from '$client/toast.svelte.ts';
 	import Badge from '$components/ui/Badge.svelte';
 	import Button from '$components/ui/Button.svelte';
@@ -20,14 +20,10 @@
 	async function start() {
 		starting = true;
 		try {
-			const workout = await api.workouts.start({
-				sessionId: data.session.id,
-				routineId: null,
-				occurrenceDate: null
-			});
-			await goto(`/run/${workout.id}`);
+			const runId = await runs.start({ sessionId: data.session.id });
+			await goto(`/run/${runId}`);
 		} catch (error) {
-			toasts.error(error instanceof ApiError ? error.message : 'Could not start the session');
+			toasts.error(error instanceof Error ? error.message : 'Could not start the session');
 			starting = false;
 		}
 	}
@@ -75,13 +71,13 @@
 			Your history
 			{#if data.metrics.runCount > 0}
 				<span class="text-ink-subtle ml-1 font-normal normal-case">
-					· {data.metrics.runCount} run{data.metrics.runCount > 1 ? 's' : ''},
+					· {data.metrics.runCount} completed,
 					{formatDuration(data.metrics.duration.average)} on average
 				</span>
 			{/if}
 		</h2>
 
-		{#if data.metrics.runCount === 0}
+		{#if data.metrics.runs.length === 0}
 			<Card>
 				<p class="text-ink-subtle py-6 text-center text-[13px]">
 					No runs yet. Start the session and it will start tracking itself.

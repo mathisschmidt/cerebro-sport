@@ -161,8 +161,6 @@ export function toWorkout(row: WorkoutRow): Workout {
 		startedAt: row.startedAt,
 		completedAt: row.completedAt,
 		totalMs: row.totalMs,
-		activeMs: row.activeMs,
-		restMs: row.restMs,
 		completedStepCount: row.completedStepCount,
 		plannedStepCount: row.plannedStepCount,
 		notes: row.notes,

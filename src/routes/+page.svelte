@@ -2,10 +2,13 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import type { RoutineOccurrence } from '$domain/models/routine.ts';
 	import { formatDuration } from '$domain/models/common.ts';
-	import { formatDateLabel, formatDateTimeLabel } from '$domain/services/date.ts';
-	import { api, ApiError } from '$client/api.ts';
-	import { toasts } from '$client/toast.svelte.ts';
+	import { workoutOutcome } from '$domain/models/workout.ts';
+	import { addDays, formatDateLabel, todayIso } from '$domain/services/date.ts';
+	import { api } from '$client/api.ts';
+	import { completedStepCount, runs, snapshot } from '$client/offline/index.ts';
+	import { occurrencesFromSnapshot, withLocalRuns } from '$client/offline/day.ts';
 	import Badge from '$components/ui/Badge.svelte';
+	import { toasts } from '$client/toast.svelte.ts';
 	import Button from '$components/ui/Button.svelte';
 	import Card from '$components/ui/Card.svelte';
 	import EmptyState from '$components/ui/EmptyState.svelte';
@@ -14,6 +17,7 @@
 	import Stat from '$components/ui/Stat.svelte';
 	import ActivityHeatmap from '$components/charts/ActivityHeatmap.svelte';
 	import OccurrenceCard from '$components/routines/OccurrenceCard.svelte';
+	import OutcomeBadge from '$components/metrics/OutcomeBadge.svelte';
 	import type { PageData } from './$types.ts';
 
 	let { data }: { data: PageData } = $props();
@@ -22,27 +26,68 @@
 	let starting = $state(false);
 	let pickerOpen = $state(false);
 
-	const pending = $derived(data.occurrences.filter((o) => o.status === 'pending'));
-	const settled = $derived(data.occurrences.filter((o) => o.status !== 'pending'));
+	/**
+	 * The page may be a stored copy from an earlier day, opened offline. Then
+	 * today's plan is rebuilt on the phone from the stored rules, so it is never
+	 * yesterday's.
+	 */
+	const today = todayIso();
+	const stale = $derived(data.today !== today && snapshot.current !== null);
+	const occurrences = $derived(
+		withLocalRuns(
+			stale && snapshot.current
+				? occurrencesFromSnapshot(snapshot.current, today, today)
+				: data.occurrences,
+			runs.waiting
+		)
+	);
+	const upcoming = $derived(
+		stale && snapshot.current
+			? occurrencesFromSnapshot(snapshot.current, addDays(today, 1), addDays(today, 7))
+			: data.upcoming
+	);
+
+	const pending = $derived(occurrences.filter((o) => o.status === 'pending'));
+	const settled = $derived(occurrences.filter((o) => o.status !== 'pending'));
+
+	/** Finished here but not on the server yet, then what the server already has. */
+	const waitingIds = $derived(new Set(runs.waiting.map((run) => run.id)));
+	const recent = $derived([
+		...runs.waiting.map((run) => ({
+			id: run.id,
+			sessionName: run.sessionName,
+			outcome: workoutOutcome({
+				status: run.status,
+				completedStepCount: completedStepCount(run),
+				plannedStepCount: run.plan.steps.length
+			}),
+			waiting: true
+		})),
+		...data.recentWorkouts
+			.filter((workout) => !waitingIds.has(workout.id))
+			.map((workout) => ({
+				id: workout.id,
+				sessionName: workout.sessionName,
+				outcome: workoutOutcome(workout),
+				waiting: false
+			}))
+	].slice(0, 4));
 
 	const adherence7 = $derived(
 		data.streak.last7.rate === null ? '—' : `${Math.round(data.streak.last7.rate * 100)}%`
-	);
-	const weekActiveMs = $derived(
-		data.streak.calendar.slice(-7).reduce((sum, day) => sum + day.activeMs, 0)
 	);
 
 	async function startSession(sessionId: string, occurrence?: RoutineOccurrence) {
 		starting = true;
 		try {
-			const workout = await api.workouts.start({
+			const runId = await runs.start({
 				sessionId,
 				routineId: occurrence?.routineId ?? null,
 				occurrenceDate: occurrence?.date ?? null
 			});
-			await goto(`/run/${workout.id}`);
+			await goto(`/run/${runId}`);
 		} catch (error) {
-			toasts.error(error instanceof ApiError ? error.message : 'Could not start the session');
+			toasts.error(error instanceof Error ? error.message : 'Could not start the session');
 			starting = false;
 		}
 	}
@@ -72,31 +117,11 @@
 
 <div class="flex flex-col gap-6">
 	<header>
-		<p class="text-ink-subtle text-[13px]">{formatDateLabel(data.today)}</p>
+		<p class="text-ink-subtle text-[13px]">{formatDateLabel(stale ? today : data.today)}</p>
 		<h1 class="text-ink text-xl font-semibold sm:text-2xl">
 			{pending.length === 0 ? 'Nothing left today' : `${pending.length} to go`}
 		</h1>
 	</header>
-
-	{#if data.activeWorkout}
-		<a
-			href="/run/{data.activeWorkout.id}"
-			class="border-accent bg-accent-soft flex items-center gap-3 rounded-2xl border p-3.5 transition-opacity hover:opacity-90"
-		>
-			<span class="bg-accent text-accent-ink grid size-9 shrink-0 place-items-center rounded-xl">
-				<Icon name="play" size={16} filled />
-			</span>
-			<div class="min-w-0 flex-1">
-				<p class="text-ink text-sm font-semibold">Session in progress</p>
-				<p class="text-ink-muted truncate text-[12px]">
-					{data.activeWorkout.sessionName} · started {formatDateTimeLabel(
-						data.activeWorkout.startedAt
-					)}
-				</p>
-			</div>
-			<span class="text-accent shrink-0"><Icon name="chevronRight" size={18} /></span>
-		</a>
-	{/if}
 
 	<!-- Today's routines -->
 	<section class="flex flex-col gap-2.5">
@@ -107,7 +132,7 @@
 			</Button>
 		</div>
 
-		{#if data.occurrences.length === 0}
+		{#if occurrences.length === 0}
 			<EmptyState
 				icon="calendar"
 				title="No routine due today"
@@ -140,7 +165,7 @@
 	<section class="flex flex-col gap-3">
 		<h2 class="text-ink text-[13px] font-semibold tracking-wide uppercase">Consistency</h2>
 
-		<div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+		<div class="grid grid-cols-3 gap-2.5">
 			<Stat
 				label="Current streak"
 				value="{data.streak.currentStreak}d"
@@ -153,12 +178,6 @@
 				value={adherence7}
 				caption="{data.streak.last7.completed}/{data.streak.last7.due} routines"
 				icon="target"
-			/>
-			<Stat
-				label="Trained this week"
-				value={formatDuration(weekActiveMs)}
-				caption="active time"
-				icon="clock"
 			/>
 			<Stat
 				label="Done today"
@@ -175,24 +194,21 @@
 	</section>
 
 	<!-- Later this week -->
-	{#if data.upcoming.length > 0}
+	{#if upcoming.length > 0}
 		<section class="flex flex-col gap-2.5">
 			<h2 class="text-ink text-[13px] font-semibold tracking-wide uppercase">Later this week</h2>
 			<Card padded={false}>
 				<ul>
-					{#each data.upcoming as occurrence (occurrence.routineId + occurrence.date)}
+					{#each upcoming as occurrence (occurrence.routineId + occurrence.date)}
 						<li
 							class="border-line flex items-center gap-3 border-b px-4 py-2.5 last:border-b-0"
 						>
 							<span class="text-ink-subtle w-20 shrink-0 text-[12px]">
-								{formatDateLabel(occurrence.date, data.today)}
+								{formatDateLabel(occurrence.date, today)}
 							</span>
 							<span class="text-ink min-w-0 flex-1 truncate text-[13px]">
-								{occurrence.routineName}
+								{occurrence.sessionName}
 							</span>
-							{#if occurrence.timeOfDay}
-								<Badge>{occurrence.timeOfDay}</Badge>
-							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -201,7 +217,7 @@
 	{/if}
 
 	<!-- Recent -->
-	{#if data.recentWorkouts.length > 0}
+	{#if recent.length > 0}
 		<section class="flex flex-col gap-2.5">
 			<div class="flex items-center justify-between">
 				<h2 class="text-ink text-[13px] font-semibold tracking-wide uppercase">Recent sessions</h2>
@@ -209,16 +225,14 @@
 			</div>
 			<Card padded={false}>
 				<ul>
-					{#each data.recentWorkouts as workout (workout.id)}
+					{#each recent as workout (workout.id)}
 						<li class="border-line flex items-center gap-3 border-b px-4 py-2.5 last:border-b-0">
 							<span class="text-ink-subtle shrink-0"><Icon name="history" size={15} /></span>
 							<span class="text-ink min-w-0 flex-1 truncate text-[13px]">{workout.sessionName}</span>
-							<span class="text-ink-subtle shrink-0 text-[12px]">
-								{formatDateTimeLabel(workout.startedAt)}
-							</span>
-							<span class="text-ink tabular shrink-0 text-[12px] font-medium">
-								{formatDuration(workout.totalMs)}
-							</span>
+							{#if workout.waiting}
+								<Badge>Waiting to sync</Badge>
+							{/if}
+							<OutcomeBadge outcome={workout.outcome} />
 						</li>
 					{/each}
 				</ul>

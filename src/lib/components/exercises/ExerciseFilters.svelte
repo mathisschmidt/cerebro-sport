@@ -13,13 +13,16 @@
 		tags: string[];
 		selectedCategories: string[];
 		selectedTags: string[];
+		/** Spacing to the content below; the default suits a page, a modal passes its own. */
+		class?: string;
 	}
 
 	let {
 		categories,
 		tags,
 		selectedCategories = $bindable(),
-		selectedTags = $bindable()
+		selectedTags = $bindable(),
+		class: className = 'mb-4'
 	}: Props = $props();
 
 	const chosen = $derived(selectedCategories.length + selectedTags.length);
@@ -29,7 +32,7 @@
 	}
 </script>
 
-<div class="border-line bg-surface-sunken/40 mb-4 flex flex-col gap-3 rounded-xl border p-3">
+<div class="border-line bg-surface-sunken/40 flex flex-col gap-3 rounded-xl border p-3 {className}">
 	{#if categories.length > 0}
 		<div class="flex flex-col gap-1.5">
 			<span class="text-ink-subtle flex items-center gap-1.5 text-[11px] font-medium tracking-wide uppercase">

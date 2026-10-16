@@ -292,17 +292,18 @@ function seedHistory(
 		let cursor = new Date(`${date}T07:30:00`).getTime();
 		const startedAt = new Date(cursor).toISOString();
 
-		let activeMs = 0;
-		let restMs = 0;
+		// Now and then a run is left part-way, so history shows every outcome:
+		// the steps after `stopAfter` are never reached.
+		const roll = pseudoRandom(runIndex * 3.1 + sessionId.length * 1.7);
+		const keptShare = roll < 0.05 ? 0.4 : roll < 0.1 ? 0.6 : roll < 0.16 ? 0.85 : 1;
+		const stopAfter = Math.max(1, Math.round(plan.steps.length * keptShare));
+		const finished = stopAfter >= plan.steps.length;
 
-		const rows = plan.steps.map((step, stepIndex) => {
+		const rows = plan.steps.slice(0, stopAfter).map((step, stepIndex) => {
 			const durationMs = stepDurationMs(step, runIndex, runIndex * 31 + stepIndex);
 			const stepStarted = new Date(cursor).toISOString();
 			cursor += durationMs;
 			const stepCompleted = new Date(cursor).toISOString();
-
-			if (step.kind === 'rest') restMs += durationMs;
-			else activeMs += durationMs;
 
 			return {
 				id: newId(),
@@ -344,12 +345,12 @@ function seedHistory(
 					sessionName,
 					routineId,
 					occurrenceDate: date,
-					status: 'completed',
+					status: finished ? 'completed' : 'abandoned',
 					startedAt,
 					completedAt,
-					totalMs: activeMs + restMs,
-					activeMs,
-					restMs,
+					// Step times summed, as `refreshTotals` derives it. The seed never pauses, so
+					// that is the span from first step to last.
+					totalMs: cursor - new Date(startedAt).getTime(),
 					completedStepCount: rows.length,
 					plannedStepCount: plan.steps.length,
 					notes: '',
@@ -361,6 +362,8 @@ function seedHistory(
 
 			for (const row of rows) tx.insert(schema.workoutSteps).values(row).run();
 
+			// Only a finished run ticks its routine off.
+			if (!finished) return;
 			tx.insert(schema.routineOccurrences)
 				.values({
 					id: newId(),

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { asc, desc, eq, gte, inArray, lt, lte, ne, sql } from 'drizzle-orm';
 import type { SessionPlan } from '$domain/models/plan.ts';
 import type {
 	Workout,
@@ -42,19 +42,22 @@ export const workoutRepository = {
 		routineId: string | null;
 		occurrenceDate: string | null;
 		plan: SessionPlan;
+		/** Given by the phone for a run it started itself. */
+		id?: string;
+		startedAt?: string;
 	}): Workout {
 		const now = new Date().toISOString();
 		const row = db
 			.insert(workouts)
 			.values({
-				id: newId(),
+				id: args.id ?? newId(),
 				userId: args.userId,
 				sessionId: args.sessionId,
 				sessionName: args.sessionName,
 				routineId: args.routineId,
 				occurrenceDate: args.occurrenceDate,
 				status: 'in_progress',
-				startedAt: now,
+				startedAt: args.startedAt ?? now,
 				completedAt: null,
 				plannedStepCount: args.plan.steps.length,
 				plan: JSON.stringify(args.plan),
@@ -80,15 +83,26 @@ export const workoutRepository = {
 		return workout ? (attachSteps([workout])[0] ?? null) : null;
 	},
 
-	/** Most recent unfinished workout, used to offer a resume. */
-	findActive(userId: string): Workout | null {
-		const row = db
+	/** Unfinished workouts that started before `startedAt` — the runs a new start ends. */
+	findActiveBefore(userId: string, startedAt: string): Workout[] {
+		return db
 			.select()
 			.from(workouts)
-			.where(ownedBy(workouts.userId, userId, eq(workouts.status, 'in_progress')))
-			.orderBy(desc(workouts.startedAt))
-			.get();
-		return row ? toWorkout(row) : null;
+			.where(
+				ownedBy(
+					workouts.userId,
+					userId,
+					eq(workouts.status, 'in_progress'),
+					lt(workouts.startedAt, startedAt)
+				)
+			)
+			.all()
+			.map(toWorkout);
+	},
+
+	/** Whether any account already holds this id — a replayed start must not take another's. */
+	idTaken(id: string): boolean {
+		return db.select({ id: workouts.id }).from(workouts).where(eq(workouts.id, id)).get() !== undefined;
 	},
 
 	list(userId: string, query: WorkoutQuery): Workout[] {
@@ -168,28 +182,26 @@ export const workoutRepository = {
 
 	/**
 	 * Recomputes the workout's rollups from its step logs, which are the only
-	 * source of truth for how long a session took.
+	 * source of truth for how long a session took. Each log's `durationMs` is
+	 * the time on that step with pauses taken out, and steps follow each other
+	 * with no gap, so their sum is the training time: rests in, pauses out.
+	 * Time on a step later skipped was still spent, so it counts too — a skipped
+	 * step only stops counting as done.
 	 */
 	refreshTotals(workoutId: string): void {
 		const totals = db
 			.select({
-				completed: sql<number>`count(*)`,
-				activeMs: sql<number>`coalesce(sum(case when ${workoutSteps.kind} = 'exercise' then ${workoutSteps.durationMs} else 0 end), 0)`,
-				restMs: sql<number>`coalesce(sum(case when ${workoutSteps.kind} = 'rest' then ${workoutSteps.durationMs} else 0 end), 0)`
+				completed: sql<number>`coalesce(sum(case when ${workoutSteps.skipped} then 0 else 1 end), 0)`,
+				trainingMs: sql<number>`coalesce(sum(${workoutSteps.durationMs}), 0)`
 			})
 			.from(workoutSteps)
-			.where(and(eq(workoutSteps.workoutId, workoutId), eq(workoutSteps.skipped, false)))
+			.where(eq(workoutSteps.workoutId, workoutId))
 			.get();
-
-		const activeMs = totals?.activeMs ?? 0;
-		const restMs = totals?.restMs ?? 0;
 
 		db.update(workouts)
 			.set({
 				completedStepCount: totals?.completed ?? 0,
-				activeMs,
-				restMs,
-				totalMs: activeMs + restMs,
+				totalMs: totals?.trainingMs ?? 0,
 				updatedAt: new Date().toISOString()
 			})
 			.where(eq(workouts.id, workoutId))
@@ -199,7 +211,7 @@ export const workoutRepository = {
 	finish(
 		userId: string,
 		id: string,
-		args: { status: 'completed' | 'abandoned'; notes: string }
+		args: { status: 'completed' | 'abandoned'; notes: string; completedAt?: string }
 	): Workout | null {
 		const current = this.findById(userId, id);
 		if (!current) return null;
@@ -207,10 +219,11 @@ export const workoutRepository = {
 		// Totals come from the step logs, so a late `finish` call cannot inflate them.
 		this.refreshTotals(id);
 
-		const completedAt = new Date().toISOString();
+		const updatedAt = new Date().toISOString();
+		const completedAt = args.completedAt ?? updatedAt;
 		const row = db
 			.update(workouts)
-			.set({ status: args.status, notes: args.notes, completedAt, updatedAt: completedAt })
+			.set({ status: args.status, notes: args.notes, completedAt, updatedAt })
 			.where(ownedBy(workouts.userId, userId, eq(workouts.id, id)))
 			.returning()
 			.get();
@@ -222,6 +235,32 @@ export const workoutRepository = {
 		return db.transaction((tx) => {
 			tx.delete(workoutSteps).where(eq(workoutSteps.workoutId, id)).run();
 			return tx.delete(workouts).where(eq(workouts.id, id)).run().changes > 0;
+		});
+	},
+
+	/**
+	 * Deletes every finished run of a session, with its step logs, and returns
+	 * their ids. A run still in progress is left alone — it is not history yet.
+	 */
+	removeFinishedForSession(userId: string, sessionId: string): string[] {
+		return db.transaction((tx) => {
+			const ids = tx
+				.select({ id: workouts.id })
+				.from(workouts)
+				.where(
+					ownedBy(
+						workouts.userId,
+						userId,
+						eq(workouts.sessionId, sessionId),
+						ne(workouts.status, 'in_progress')
+					)
+				)
+				.all()
+				.map((row) => row.id);
+			if (ids.length === 0) return ids;
+			tx.delete(workoutSteps).where(inArray(workoutSteps.workoutId, ids)).run();
+			tx.delete(workouts).where(inArray(workouts.id, ids)).run();
+			return ids;
 		});
 	},
 

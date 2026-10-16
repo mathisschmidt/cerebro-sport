@@ -23,14 +23,7 @@ import type {
 	RoutinePatch
 } from '$domain/models/routine.ts';
 import type { SessionDetail, SessionInput, SessionSummary } from '$domain/models/session.ts';
-import type {
-	Workout,
-	WorkoutDetail,
-	WorkoutFinish,
-	WorkoutQuery,
-	WorkoutStart,
-	WorkoutStepLogInput
-} from '$domain/models/workout.ts';
+import type { Workout, WorkoutDetail, WorkoutQuery } from '$domain/models/workout.ts';
 
 /**
  * The typed client for `/api`. Every call goes through `request`, so error
@@ -61,11 +54,18 @@ async function request<T>(
 	options: { body?: unknown; fetch?: FetchLike } = {}
 ): Promise<T> {
 	const doFetch = options.fetch ?? globalThis.fetch;
-	const response = await doFetch(path, {
-		method,
-		headers: options.body === undefined ? {} : { 'content-type': 'application/json' },
-		body: options.body === undefined ? undefined : JSON.stringify(options.body)
-	});
+	let response: Response;
+	try {
+		response = await doFetch(path, {
+			method,
+			headers: options.body === undefined ? {} : { 'content-type': 'application/json' },
+			body: options.body === undefined ? undefined : JSON.stringify(options.body)
+		});
+	} catch {
+		// The request never reached the server. Offline, only running a session
+		// works — it goes through the outbox, not through here.
+		throw new ApiError(0, 'offline', 'You are offline — this needs a connection.');
+	}
 
 	if (response.status === 204) return undefined as T;
 
@@ -115,7 +115,9 @@ export const api = {
 		create: (body: SessionInput) => request<SessionDetail>('POST', '/api/sessions', { body }),
 		update: (id: string, body: SessionInput) =>
 			request<SessionDetail>('PUT', `/api/sessions/${id}`, { body }),
-		remove: (id: string) => request<void>('DELETE', `/api/sessions/${id}`)
+		remove: (id: string) => request<void>('DELETE', `/api/sessions/${id}`),
+		resetHistory: (id: string) =>
+			request<{ removed: number }>('DELETE', `/api/sessions/${id}/history`)
 	},
 
 	routines: {
@@ -130,19 +132,16 @@ export const api = {
 			request<RoutineOccurrence>('POST', '/api/routines/occurrences', { body })
 	},
 
+	/**
+	 * Reads only. Workout writes — start, steps, finish, discard — go through the
+	 * offline outbox (`$client/offline`), never through here, so a run takes the
+	 * same path online and offline.
+	 */
 	workouts: {
 		list: (params: Partial<WorkoutQuery> = {}, fetch?: FetchLike) =>
 			request<Workout[]>('GET', `/api/workouts${query(params)}`, { fetch }),
-		start: (body: WorkoutStart) => request<WorkoutDetail>('POST', '/api/workouts', { body }),
 		get: (id: string, fetch?: FetchLike) =>
-			request<WorkoutDetail>('GET', `/api/workouts/${id}`, { fetch }),
-		active: (fetch?: FetchLike) =>
-			request<Workout | null>('GET', '/api/workouts/active', { fetch }),
-		logStep: (id: string, body: WorkoutStepLogInput) =>
-			request<void>('POST', `/api/workouts/${id}/steps`, { body }),
-		finish: (id: string, body: WorkoutFinish) =>
-			request<WorkoutDetail>('POST', `/api/workouts/${id}/finish`, { body }),
-		remove: (id: string) => request<void>('DELETE', `/api/workouts/${id}`)
+			request<WorkoutDetail>('GET', `/api/workouts/${id}`, { fetch })
 	},
 
 	settings: {

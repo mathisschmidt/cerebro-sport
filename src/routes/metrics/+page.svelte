@@ -43,7 +43,7 @@
 	<EmptyState
 		icon="chart"
 		title="Nothing measured yet"
-		description="Run a session and this page fills itself in — total time, per-step pace, streaks."
+		description="Run a session and this page fills itself in — total time, progress, streaks."
 	>
 		{#snippet action()}
 			<Button variant="primary" size="sm" href="/" icon="play">Go train</Button>
@@ -62,7 +62,7 @@
 			<Stat
 				label="Total time"
 				value={formatDuration(overview.totalMs)}
-				caption="{formatDuration(overview.activeMs)} working"
+				caption="pauses not counted"
 				icon="clock"
 				accent
 			/>
@@ -75,7 +75,7 @@
 			<Stat
 				label="Average session"
 				value={formatDuration(overview.averageWorkoutMs)}
-				caption="start to finish"
+				caption="fully completed runs"
 				icon="target"
 			/>
 		</section>
@@ -150,8 +150,11 @@
 								{session.sessionName}
 							</p>
 							<p class="text-ink-subtle mt-0.5 text-[11px]">
-								{session.runCount} run{session.runCount > 1 ? 's' : ''} ·
-								{formatDuration(session.duration.latest)}
+								{#if session.runCount > 0}
+									{session.runCount} completed · {formatDuration(session.duration.latest)}
+								{:else}
+									No completed run yet
+								{/if}
 							</p>
 							<div class="mt-1.5">
 								<TrendPill trend={session.trend} deltaPct={session.deltaPct} />

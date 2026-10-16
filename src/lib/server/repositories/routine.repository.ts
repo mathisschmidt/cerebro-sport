@@ -1,6 +1,7 @@
 import { and, asc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import type { IsoDate } from '$domain/models/common.ts';
 import type {
+	OccurrenceRecord,
 	OccurrenceResolution,
 	Routine,
 	RoutineInput,
@@ -12,14 +13,6 @@ import { newId } from '../db/ids.ts';
 import { ownedBy } from './scope.ts';
 
 const { routines, routineOccurrences } = schema;
-
-export interface OccurrenceRecord {
-	routineId: string;
-	date: IsoDate;
-	status: 'completed' | 'skipped';
-	workoutId: string | null;
-	resolvedAt: string;
-}
 
 function toRowValues(input: RoutineInput) {
 	return {
@@ -148,6 +141,19 @@ export const routineRepository = {
 				workoutId: row.workoutId,
 				resolvedAt: row.resolvedAt
 			}));
+	},
+
+	/**
+	 * Unlinks occurrences from workouts that no longer exist. The tick itself
+	 * stays: the routine was honoured that day whether or not its run is kept.
+	 * Callers pass ids of workouts they have already established are the user's.
+	 */
+	detachWorkouts(workoutIds: string[]): void {
+		if (workoutIds.length === 0) return;
+		db.update(routineOccurrences)
+			.set({ workoutId: null })
+			.where(inArray(routineOccurrences.workoutId, workoutIds))
+			.run();
 	},
 
 	/** Upserts a deviation; `pending` clears the row so absence stays the default. */
