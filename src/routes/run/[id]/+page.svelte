@@ -68,8 +68,7 @@
 	// A closed tab or a reload still ends the run. With nothing done there is
 	// nothing to end — the empty run is cleared the next time one starts.
 	function onpagehide() {
-		if (ended) return;
-		if (runner.recordedCount > 0 || runner.phase === 'finished') runner.endOnUnload();
+		if (!ended) runner.endOnUnload();
 	}
 
 	// Time spent deciding whether to leave is not training time.

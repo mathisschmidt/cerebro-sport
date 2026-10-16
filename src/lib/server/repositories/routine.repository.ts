@@ -1,6 +1,7 @@
 import { and, asc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import type { IsoDate } from '$domain/models/common.ts';
 import type {
+	OccurrenceRecord,
 	OccurrenceResolution,
 	Routine,
 	RoutineInput,
@@ -12,14 +13,6 @@ import { newId } from '../db/ids.ts';
 import { ownedBy } from './scope.ts';
 
 const { routines, routineOccurrences } = schema;
-
-export interface OccurrenceRecord {
-	routineId: string;
-	date: IsoDate;
-	status: 'completed' | 'skipped';
-	workoutId: string | null;
-	resolvedAt: string;
-}
 
 function toRowValues(input: RoutineInput) {
 	return {

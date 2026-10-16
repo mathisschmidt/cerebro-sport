@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { IsoDate } from './common.ts';
 import {
 	idSchema,
 	isoDateSchema,
@@ -86,6 +87,18 @@ export const routineOccurrenceSchema = z.object({
 	resolvedAt: isoDateTimeSchema.nullable()
 });
 export type RoutineOccurrence = z.infer<typeof routineOccurrenceSchema>;
+
+/**
+ * A recorded deviation from the schedule. Only completions and skips are
+ * stored — `pending` is the absence of a record.
+ */
+export interface OccurrenceRecord {
+	routineId: string;
+	date: IsoDate;
+	status: 'completed' | 'skipped';
+	workoutId: string | null;
+	resolvedAt: string;
+}
 
 /** Body for marking an occurrence done or skipped without running it. */
 export const occurrenceResolutionSchema = z.object({

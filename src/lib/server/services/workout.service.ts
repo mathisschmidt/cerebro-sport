@@ -11,7 +11,7 @@ import { isRecorded } from '$domain/models/workout.ts';
 import { workoutRepository } from '../repositories/workout.repository.ts';
 import { routineRepository } from '../repositories/routine.repository.ts';
 import { sessionService } from './session.service.ts';
-import { badRequest, notFound } from '../http/errors.ts';
+import { badRequest, conflict, notFound } from '../http/errors.ts';
 
 /**
  * Running a session.
@@ -22,26 +22,51 @@ import { badRequest, notFound } from '../http/errors.ts';
  *
  * A run is never resumed. However it is left — the leave dialog, a closed tab,
  * a reload, starting another session — it ends there, through `finish`.
+ *
+ * Runs are local-first: the phone starts them, possibly offline, and replays
+ * start, steps and finish from its outbox. So every write here is idempotent,
+ * and a replay arriving hours late must still land as if it were on time.
  */
 export const workoutService = {
 	start(userId: string, input: WorkoutStart): WorkoutDetail {
-		const session = sessionService.get(userId, input.sessionId);
-		const plan = sessionService.plan(userId, input.sessionId);
-		if (plan.steps.length === 0) {
-			throw badRequest('This session has no steps to run');
+		// A replayed start: the run already exists, nothing more to do.
+		if (input.id) {
+			const existing = workoutRepository.findDetail(userId, input.id);
+			if (existing) return existing;
+			if (workoutRepository.idTaken(input.id)) throw conflict('That workout id is already in use');
 		}
 
-		// Only one workout can be in flight; starting a new one ends the old.
-		const active = workoutRepository.findActive(userId);
-		if (active) this.leave(userId, active.id);
+		// The phone sends the plan it actually ran, which may predate an edit or
+		// outlive the session itself; without one, the run uses today's plan.
+		let plan = input.plan;
+		if (plan) {
+			if (plan.sessionId !== input.sessionId) {
+				throw badRequest('The plan does not belong to that session');
+			}
+		} else {
+			sessionService.get(userId, input.sessionId);
+			plan = sessionService.plan(userId, input.sessionId);
+			if (plan.steps.length === 0) throw badRequest('This session has no steps to run');
+		}
+
+		// Only one workout can be in flight; starting a new one ends those still
+		// open — but only older ones, so a run synced late never ends a newer one.
+		// They are ended, never deleted, even with no step yet: another phone may
+		// still be holding their steps in its outbox. Empty, they count nowhere.
+		const startedAt = input.startedAt ?? new Date().toISOString();
+		for (const active of workoutRepository.findActiveBefore(userId, startedAt)) {
+			workoutRepository.finish(userId, active.id, { status: 'abandoned', notes: active.notes });
+		}
 
 		const workout = workoutRepository.create({
 			userId,
-			sessionId: session.id,
-			sessionName: session.name,
+			sessionId: input.sessionId,
+			sessionName: plan.sessionName,
 			routineId: input.routineId,
 			occurrenceDate: input.occurrenceDate,
-			plan
+			plan,
+			id: input.id,
+			startedAt
 		});
 
 		return { ...workout, steps: [] };
@@ -87,9 +112,9 @@ export const workoutService = {
 	logStep(userId: string, workoutId: string, input: WorkoutStepLogInput): WorkoutStepLog {
 		const workout = workoutRepository.findById(userId, workoutId);
 		if (!workout) throw notFound('Workout not found');
-		if (workout.status !== 'in_progress') {
-			throw badRequest('This workout is already finished');
-		}
+		// Steps are accepted after the end too: a run another device's start
+		// closed while this phone was offline must still get its steps when they
+		// sync. The write is an upsert on the step index, so a replay is harmless.
 		if (input.stepIndex >= workout.plan.steps.length) {
 			throw badRequest('That step is not part of this workout');
 		}
@@ -116,7 +141,8 @@ export const workoutService = {
 
 		const workout = workoutRepository.finish(userId, id, {
 			status: input.status,
-			notes: input.notes
+			notes: input.notes,
+			completedAt: input.completedAt
 		});
 		if (!workout) throw notFound('Workout not found');
 
@@ -131,11 +157,6 @@ export const workoutService = {
 		}
 
 		return this.get(userId, id);
-	},
-
-	/** Ends a run the athlete walked away from, keeping whatever was done. */
-	leave(userId: string, id: string): void {
-		this.finish(userId, id, { status: 'abandoned', notes: '' });
 	},
 
 	remove(userId: string, id: string): void {

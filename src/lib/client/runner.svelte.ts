@@ -1,6 +1,6 @@
 import type { PlanStep, SessionPlan } from '$domain/models/plan.ts';
 import type { WorkoutStepLogInput } from '$domain/models/workout.ts';
-import { api } from './api.ts';
+import { beat, runs, stopBeat } from './offline/index.ts';
 import { sound } from './sound.svelte.ts';
 
 /**
@@ -9,14 +9,17 @@ import { sound } from './sound.svelte.ts';
  * Two rules shape everything here:
  *  - Time is measured from timestamps, never accumulated from ticks, so a
  *    backgrounded phone tab does not lose seconds.
- *  - Every finished step is posted immediately, and a failed post is retried
- *    rather than dropped. A session interrupted by a dead battery keeps
- *    everything up to that point.
+ *  - Every finished step is stored on the phone the moment it ends, and the
+ *    outbox delivers it — now if online, later if not. A session interrupted
+ *    by a dead battery or a lost signal keeps everything up to that point.
  */
 
 export type RunnerPhase = 'running' | 'paused' | 'finished';
 
 const TICK_MS = 100;
+
+/** How often the run tells other tabs, and the next app opening, that it is alive. */
+const BEAT_MS = 5_000;
 
 export class WorkoutRunner {
 	readonly workoutId: string;
@@ -51,8 +54,9 @@ export class WorkoutRunner {
 
 	#timer: ReturnType<typeof setInterval> | null = null;
 	#wakeLock: WakeLockSentinel | null = null;
-	/** Step logs whose POST failed, retried on the next step and at finish. */
-	#pending: WorkoutStepLogInput[] = [];
+	/** Local writes, chained so two quick steps never overwrite each other's log. */
+	#writes: Promise<void> = Promise.resolve();
+	#lastBeat = 0;
 
 	/** A run always starts at its first step — it is never resumed. */
 	constructor(workoutId: string, plan: SessionPlan) {
@@ -132,6 +136,10 @@ export class WorkoutRunner {
 
 	#tick(): void {
 		this.#now = Date.now();
+		if (this.phase !== 'finished' && this.#now - this.#lastBeat > BEAT_MS) {
+			this.#lastBeat = this.#now;
+			beat(this.workoutId);
+		}
 		if (this.phase !== 'running') return;
 		if (this.isCountdown && this.remainingMs === 0) {
 			this.complete();
@@ -224,61 +232,43 @@ export class WorkoutRunner {
 	}
 
 	#enqueue(log: WorkoutStepLogInput): void {
-		this.#pending.push(log);
-		void this.flush();
+		this.#writes = this.#writes.then(() => runs.recordStep(this.workoutId, log)).catch(() => {});
 	}
 
-	/** Posts everything queued; anything that fails stays queued for the next try. */
-	async flush(): Promise<void> {
-		const queue = [...this.#pending];
-		this.#pending = [];
-		for (const log of queue) {
-			try {
-				await api.workouts.logStep(this.workoutId, log);
-			} catch {
-				this.#pending.push(log);
-			}
-		}
-	}
-
+	/** Ends the run, kept. Stored at once; the outbox reports it when it can. */
 	async finish(status: 'completed' | 'abandoned', notes = ''): Promise<void> {
 		this.finishing = true;
 		try {
-			await this.flush();
-			await api.workouts.finish(this.workoutId, { status, notes });
+			await this.#writes;
+			await runs.finish(this.workoutId, status, notes);
 		} finally {
 			this.finishing = false;
 		}
 	}
 
 	/**
-	 * Reports the ending when the page is going away — a closed tab or a reload —
-	 * where a normal request would be cancelled. Beacons are fire-and-forget, so
-	 * the server's `finish` is idempotent and the run page closes any run it
-	 * finds left half-way. On the summary screen the run is complete; anywhere
-	 * else it was left.
+	 * The page is going away — a closed tab or a reload. Leaving ends the run:
+	 * complete on the summary screen, left early anywhere else. This is a best
+	 * effort, as a dying page may not finish writing; every step is already
+	 * stored, and the next opening of the app ends a run left behind anyway.
 	 */
 	endOnUnload(): void {
+		// The page is no longer this run's; the next opening must not take it for
+		// a run still open in another tab.
+		stopBeat(this.workoutId);
+		// Nothing done yet: a reload keeps the run, and a run left empty is cleared
+		// by the next opening or the next start.
+		if (this.recordedCount === 0 && this.phase !== 'finished') return;
 		const status = this.phase === 'finished' ? 'completed' : 'abandoned';
-		const send = (path: string, body: unknown) =>
-			navigator.sendBeacon?.(
-				`/api/workouts/${this.workoutId}/${path}`,
-				new Blob([JSON.stringify(body)], { type: 'application/json' })
-			);
-		for (const log of this.#pending) send('steps', log);
-		this.#pending = [];
-		send('finish', { status, notes: '' });
+		void this.#writes.then(() => runs.finish(this.workoutId, status));
 	}
 
-	/**
-	 * Leaves without keeping anything. Queued logs are dropped rather than
-	 * flushed — they would only be deleted with the workout.
-	 */
+	/** Leaves without keeping anything; if the server never heard of the run, it never will. */
 	async discard(): Promise<void> {
 		this.finishing = true;
 		try {
-			this.#pending = [];
-			await api.workouts.remove(this.workoutId);
+			await this.#writes;
+			await runs.discard(this.workoutId);
 		} finally {
 			this.finishing = false;
 		}

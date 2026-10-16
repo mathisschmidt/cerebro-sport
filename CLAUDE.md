@@ -97,6 +97,54 @@ exactly one place each — keep it that way:
   steps already logged, and the runner always starts at step one. Do not add a
   resume path back.
 
+## Offline
+
+Training works offline; everything else is read-only offline. The README's
+"Training offline" section has the behaviour; the shape is:
+
+- **Runs are local-first — one path, online or not.** `lib/client/offline/`
+  creates every run on the phone (`runs.start`), stores it in IndexedDB, and
+  queues start, steps and finish in the outbox, which delivers in order. Never
+  add a second, "online" path that calls `/api/workouts` directly — the two
+  would drift. Everything else (library, routines, coach…) stays online-only on
+  purpose: no sync engine, no offline edits.
+- **Every workout write is idempotent.** A start carries the phone's `id`,
+  `startedAt` and `plan`; a replayed start returns the existing workout. Steps
+  are an upsert on step index and are accepted even after the run ended (another
+  device may have closed it). `finish` carries the phone's `completedAt`.
+- **The phone's plan is stored as-is.** That is the one exception to "never let
+  the client send a resolved plan": a workout's plan is a record of what was
+  run, not an instruction to the library. It is validated against
+  `sessionPlanSchema`, must name the same session, and is bounded in size.
+- **A start ends only older open runs, and never deletes them** — another phone
+  may still hold their steps. Empty, they count nowhere (`isRecorded`).
+- **Today is rebuilt on the phone with `buildOccurrences`** (the server's own
+  function) from the snapshot's rules. Day logic belongs there, nowhere else.
+- **The run page is `ssr = false` with a universal `+page.ts`.** It must open
+  with no network, so it can have no `+page.server.ts`.
+
+## Things that will bite (offline)
+
+- **IndexedDB cannot store a Svelte proxy.** State that ends up in IndexedDB is
+  `$state.raw`, and `commit()` snapshots values before writing. A plain `$state`
+  there fails with "Proxy object could not be cloned".
+- **Never `invalidateAll()` on the run page.** Its load would re-run, see the
+  steps just logged and end the run as left. The layout skips it there.
+- **The heartbeat tells a live run from a left one.** The run page writes
+  `cerebro-sport:active-run` every few seconds; opening the app ends runs whose
+  beat is stale. `pagehide` clears it synchronously — keep that, or a reload
+  looks like a second tab and the run is never ended.
+- **Sign-out must wipe** IndexedDB, the `pages-*` caches and the heartbeat
+  (`resetOffline`). Cached pages hold the athlete's data.
+- **The service worker never `skipWaiting`s by itself.** An update waits and the
+  layout offers to reload, never on the run page.
+- **`__data.json` redirects are 200s.** A signed-out data request answers
+  `{"type":"redirect"}` with status 200; the worker must not cache it, or
+  offline the app would send the athlete to sign-in forever.
+- **E2E behind a non-default port** needs `BETTER_AUTH_URL` set to that origin,
+  or Better Auth answers sign-out with 403 "Invalid origin". Compose always sets
+  it.
+
 ## The training pack format
 
 `lib/domain/models/pack.ts` defines the import format the Coach page uses. Every
@@ -216,6 +264,12 @@ file.
   import over a missing description helps nobody.
 
 ## Verifying a change
+
+Anything touching runs, the outbox or the service worker needs a production
+build (`npm run build && node build`): the service worker does not behave the
+same under `npm run dev`. Test offline by stopping the server *and* with the
+browser's offline mode — they exercise different paths (failed requests versus
+`navigator.onLine`).
 
 ```bash
 npm run check          # types + templates

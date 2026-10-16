@@ -1,4 +1,4 @@
-import { asc, desc, eq, gte, inArray, lte, ne, sql } from 'drizzle-orm';
+import { asc, desc, eq, gte, inArray, lt, lte, ne, sql } from 'drizzle-orm';
 import type { SessionPlan } from '$domain/models/plan.ts';
 import type {
 	Workout,
@@ -42,19 +42,22 @@ export const workoutRepository = {
 		routineId: string | null;
 		occurrenceDate: string | null;
 		plan: SessionPlan;
+		/** Given by the phone for a run it started itself. */
+		id?: string;
+		startedAt?: string;
 	}): Workout {
 		const now = new Date().toISOString();
 		const row = db
 			.insert(workouts)
 			.values({
-				id: newId(),
+				id: args.id ?? newId(),
 				userId: args.userId,
 				sessionId: args.sessionId,
 				sessionName: args.sessionName,
 				routineId: args.routineId,
 				occurrenceDate: args.occurrenceDate,
 				status: 'in_progress',
-				startedAt: now,
+				startedAt: args.startedAt ?? now,
 				completedAt: null,
 				plannedStepCount: args.plan.steps.length,
 				plan: JSON.stringify(args.plan),
@@ -80,15 +83,26 @@ export const workoutRepository = {
 		return workout ? (attachSteps([workout])[0] ?? null) : null;
 	},
 
-	/** Most recent unfinished workout, used to offer a resume. */
-	findActive(userId: string): Workout | null {
-		const row = db
+	/** Unfinished workouts that started before `startedAt` — the runs a new start ends. */
+	findActiveBefore(userId: string, startedAt: string): Workout[] {
+		return db
 			.select()
 			.from(workouts)
-			.where(ownedBy(workouts.userId, userId, eq(workouts.status, 'in_progress')))
-			.orderBy(desc(workouts.startedAt))
-			.get();
-		return row ? toWorkout(row) : null;
+			.where(
+				ownedBy(
+					workouts.userId,
+					userId,
+					eq(workouts.status, 'in_progress'),
+					lt(workouts.startedAt, startedAt)
+				)
+			)
+			.all()
+			.map(toWorkout);
+	},
+
+	/** Whether any account already holds this id — a replayed start must not take another's. */
+	idTaken(id: string): boolean {
+		return db.select({ id: workouts.id }).from(workouts).where(eq(workouts.id, id)).get() !== undefined;
 	},
 
 	list(userId: string, query: WorkoutQuery): Workout[] {
@@ -197,7 +211,7 @@ export const workoutRepository = {
 	finish(
 		userId: string,
 		id: string,
-		args: { status: 'completed' | 'abandoned'; notes: string }
+		args: { status: 'completed' | 'abandoned'; notes: string; completedAt?: string }
 	): Workout | null {
 		const current = this.findById(userId, id);
 		if (!current) return null;
@@ -205,10 +219,11 @@ export const workoutRepository = {
 		// Totals come from the step logs, so a late `finish` call cannot inflate them.
 		this.refreshTotals(id);
 
-		const completedAt = new Date().toISOString();
+		const updatedAt = new Date().toISOString();
+		const completedAt = args.completedAt ?? updatedAt;
 		const row = db
 			.update(workouts)
-			.set({ status: args.status, notes: args.notes, completedAt, updatedAt: completedAt })
+			.set({ status: args.status, notes: args.notes, completedAt, updatedAt })
 			.where(ownedBy(workouts.userId, userId, eq(workouts.id, id)))
 			.returning()
 			.get();

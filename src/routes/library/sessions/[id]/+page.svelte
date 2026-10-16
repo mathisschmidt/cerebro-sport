@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { formatDuration } from '$domain/models/common.ts';
 	import { describeRecurrence } from '$domain/models/routine.ts';
-	import { api, ApiError } from '$client/api.ts';
+	import { runs } from '$client/offline/index.ts';
 	import { toasts } from '$client/toast.svelte.ts';
 	import Badge from '$components/ui/Badge.svelte';
 	import Button from '$components/ui/Button.svelte';
@@ -20,14 +20,10 @@
 	async function start() {
 		starting = true;
 		try {
-			const workout = await api.workouts.start({
-				sessionId: data.session.id,
-				routineId: null,
-				occurrenceDate: null
-			});
-			await goto(`/run/${workout.id}`);
+			const runId = await runs.start({ sessionId: data.session.id });
+			await goto(`/run/${runId}`);
 		} catch (error) {
-			toasts.error(error instanceof ApiError ? error.message : 'Could not start the session');
+			toasts.error(error instanceof Error ? error.message : 'Could not start the session');
 			starting = false;
 		}
 	}

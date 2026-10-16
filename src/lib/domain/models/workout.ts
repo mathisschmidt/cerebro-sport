@@ -72,12 +72,30 @@ export function countsInSessionStats(workout: Counted): boolean {
 	return workoutOutcome(workout) === 'complete';
 }
 
-/** Body for starting a workout. */
+/** Most steps a recorded plan may carry — far past any real session. */
+const MAX_PLAN_STEPS = 5000;
+
+/**
+ * Body for starting a workout.
+ *
+ * Runs are local-first: the phone creates the workout, possibly offline, and
+ * replays the start later. It then sends its own `id`, so a replayed start is
+ * recognised rather than duplicated, the `startedAt` of the real start, and the
+ * `plan` it actually ran. The plan is a record of what was done, stored as-is —
+ * not an instruction for the server to apply to the library.
+ */
 export const workoutStartSchema = z.object({
 	sessionId: idSchema,
 	/** Set when the workout was started from a scheduled occurrence. */
 	routineId: idSchema.nullable().default(null),
-	occurrenceDate: isoDateSchema.nullable().default(null)
+	occurrenceDate: isoDateSchema.nullable().default(null),
+	id: idSchema.optional(),
+	startedAt: isoDateTimeSchema.optional(),
+	plan: sessionPlanSchema
+		.refine((plan) => plan.steps.length > 0 && plan.steps.length <= MAX_PLAN_STEPS, {
+			message: `A plan has between 1 and ${MAX_PLAN_STEPS} steps`
+		})
+		.optional()
 });
 export type WorkoutStart = z.infer<typeof workoutStartSchema>;
 
@@ -114,7 +132,9 @@ export type WorkoutStepLog = z.infer<typeof workoutStepLogSchema>;
 /** Body for closing a workout out. */
 export const workoutFinishSchema = z.object({
 	status: z.enum(['completed', 'abandoned']).default('completed'),
-	notes: z.string().trim().max(2000).default('')
+	notes: z.string().trim().max(2000).default(''),
+	/** When the run really ended, from the phone; a run synced later keeps it. */
+	completedAt: isoDateTimeSchema.optional()
 });
 export type WorkoutFinish = z.infer<typeof workoutFinishSchema>;
 
