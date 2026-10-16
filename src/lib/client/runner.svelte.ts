@@ -1,6 +1,7 @@
 import type { PlanStep, SessionPlan } from '$domain/models/plan.ts';
 import type { WorkoutStepLogInput } from '$domain/models/workout.ts';
 import { api } from './api.ts';
+import { sound } from './sound.svelte.ts';
 
 /**
  * Drives one workout.
@@ -41,9 +42,11 @@ export class WorkoutRunner {
 	#stepStartedAt = $state(Date.now());
 	#pausedAt: number | null = null;
 	#pausedMs = $state(0);
-	#workoutStartedAt = Date.now();
-	/** When the last step ended; freezes the clock on the summary screen. */
-	#endedAt = $state<number | null>(null);
+	/**
+	 * Time logged per step index, pauses already taken out. Keyed like the
+	 * server's upsert, so a step re-run after `back()` replaces its time.
+	 */
+	#loggedMs = $state<Record<number, number>>({});
 	#stepStartedIso = new Date().toISOString();
 
 	#timer: ReturnType<typeof setInterval> | null = null;
@@ -76,11 +79,13 @@ export class WorkoutRunner {
 	}
 
 	/**
-	 * Clock time since the first step started, pauses included, frozen once the
-	 * last step ends. The same span the server derives from the step logs.
+	 * Training time so far: every logged step plus the one under way, pauses
+	 * excluded. The same sum the server derives from the step logs, so the
+	 * header, the summary and the metrics all show one number.
 	 */
 	get totalElapsedMs(): number {
-		return Math.max(0, (this.#endedAt ?? this.#now) - this.#workoutStartedAt);
+		const logged = Object.values(this.#loggedMs).reduce((sum, ms) => sum + ms, 0);
+		return logged + (this.phase === 'finished' ? 0 : this.stepElapsedMs);
 	}
 
 	/** Planned length of the current step in ms, or 0 when it is self-paced. */
@@ -111,8 +116,7 @@ export class WorkoutRunner {
 	}
 
 	start(): void {
-		this.#workoutStartedAt = Date.now();
-		this.#stepStartedAt = this.#workoutStartedAt;
+		this.#stepStartedAt = Date.now();
 		this.#stepStartedIso = new Date().toISOString();
 		this.#tick();
 		this.#timer = setInterval(() => this.#tick(), TICK_MS);
@@ -155,6 +159,7 @@ export class WorkoutRunner {
 		if (!step || this.phase === 'finished') return;
 
 		const durationMs = this.stepElapsedMs;
+		this.#loggedMs[step.index] = durationMs;
 		if (options.skipped) this.#recorded.delete(step.index);
 		else this.#recorded.add(step.index);
 		this.recordedCount = this.#recorded.size;
@@ -182,7 +187,6 @@ export class WorkoutRunner {
 
 		if (this.isLast) {
 			this.phase = 'finished';
-			this.#endedAt = Date.now();
 			return;
 		}
 		this.index += 1;
@@ -199,7 +203,6 @@ export class WorkoutRunner {
 		this.index -= 1;
 		this.#resetStep();
 		if (this.phase === 'finished') this.phase = 'running';
-		this.#endedAt = null;
 	}
 
 	#resetStep(): void {
@@ -308,8 +311,12 @@ export class WorkoutRunner {
 
 let audioContext: AudioContext | null = null;
 
-/** A single short sine blip. Created lazily — browsers block audio before a gesture. */
+/**
+ * A single short sine blip, at the athlete's chosen volume. Created lazily —
+ * browsers block audio before a gesture.
+ */
 export function playTone(frequency: number, durationMs = 120): void {
+	if (sound.muted) return;
 	try {
 		audioContext ??= new AudioContext();
 		if (audioContext.state === 'suspended') void audioContext.resume();
@@ -318,7 +325,7 @@ export function playTone(frequency: number, durationMs = 120): void {
 		oscillator.frequency.value = frequency;
 		oscillator.type = 'sine';
 		gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
-		gain.gain.exponentialRampToValueAtTime(0.18, audioContext.currentTime + 0.01);
+		gain.gain.exponentialRampToValueAtTime(sound.gain, audioContext.currentTime + 0.01);
 		gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + durationMs / 1000);
 		oscillator.connect(gain).connect(audioContext.destination);
 		oscillator.start();

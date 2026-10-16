@@ -348,7 +348,8 @@ function seedHistory(
 					status: finished ? 'completed' : 'abandoned',
 					startedAt,
 					completedAt,
-					// Start of the first step to the end of the last, as `refreshTotals` derives it.
+					// Step times summed, as `refreshTotals` derives it. The seed never pauses, so
+					// that is the span from first step to last.
 					totalMs: cursor - new Date(startedAt).getTime(),
 					completedStepCount: rows.length,
 					plannedStepCount: plan.steps.length,

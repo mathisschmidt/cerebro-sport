@@ -9,8 +9,8 @@
 	import OutcomeBadge from './OutcomeBadge.svelte';
 
 	/**
-	 * One session's progress, in one measure: total time, start to end, breaks
-	 * included. The stats and the chart use fully completed runs only; the
+	 * One session's progress, in one measure: total time, rests in, pauses
+	 * out. The stats and the chart use fully completed runs only; the
 	 * history below lists every run, coloured by how it went.
 	 */
 	interface Props {

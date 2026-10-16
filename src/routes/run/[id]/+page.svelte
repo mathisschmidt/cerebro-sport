@@ -5,6 +5,7 @@
 	import { planStepLabel } from '$domain/models/plan.ts';
 	import { WORKOUT_OUTCOME_LABEL, workoutOutcome } from '$domain/models/workout.ts';
 	import { WorkoutRunner, playTone } from '$client/runner.svelte.ts';
+	import { sound } from '$client/sound.svelte.ts';
 	import { toasts } from '$client/toast.svelte.ts';
 	import Button from '$components/ui/Button.svelte';
 	import Icon from '$components/ui/Icon.svelte';
@@ -25,6 +26,17 @@
 	let notes = $state('');
 	let saving = $state(false);
 	let leaveOpen = $state(false);
+	let soundOpen = $state(false);
+
+	/** Bound to the slider; every change is stored for this device at once. */
+	const volumeProxy = {
+		get value(): number {
+			return sound.volume;
+		},
+		set value(next: number) {
+			sound.set(next);
+		}
+	};
 	let discarding = $state(false);
 	/** Whether opening the leave dialog paused the run, so staying can undo it. */
 	let pausedForLeave = false;
@@ -109,13 +121,18 @@
 	});
 
 	function onkeydown(event: KeyboardEvent) {
-		if (leaveOpen) return;
+		if (leaveOpen || soundOpen) return;
 		if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) return;
 		if (event.key === ' ') {
 			event.preventDefault();
 			if (runner.phase === 'finished') return;
-			selfPaced ? runner.complete() : runner.togglePause();
+			// Paused, space only ever resumes — it must not finish a step unseen.
+			if (runner.phase === 'paused' || !selfPaced) runner.togglePause();
+			else runner.complete();
+			return;
 		}
+		// Nothing behind the pause screen moves until the athlete is back.
+		if (runner.phase === 'paused') return;
 		if (event.key === 'ArrowRight') runner.skip();
 		if (event.key === 'ArrowLeft') runner.back();
 	}
@@ -183,6 +200,14 @@
 						)}
 					</p>
 				</div>
+				<button
+					type="button"
+					class="text-ink-subtle hover:text-ink grid size-10 shrink-0 place-items-center rounded-lg"
+					onclick={() => (soundOpen = true)}
+					aria-label="Timer sound, {sound.muted ? 'muted' : `${sound.volume}%`}"
+				>
+					<Icon name={sound.muted ? 'volumeOff' : 'volume'} size={20} />
+				</button>
 				<button
 					type="button"
 					class="text-ink-subtle hover:text-ink -mr-2 grid size-10 shrink-0 place-items-center rounded-lg"
@@ -268,9 +293,6 @@
 				</div>
 			{/if}
 
-			{#if runner.phase === 'paused'}
-				<p class="text-warning text-[13px] font-medium">Paused</p>
-			{/if}
 		</main>
 
 		<!-- Actions: everything here is thumb-reachable -->
@@ -324,6 +346,73 @@
 		</footer>
 	{/if}
 </div>
+
+<!--
+	A pause is an interruption, not training: the clock stops and none of it
+	counts. Everything behind is blurred and out of reach, so the only way back
+	is the button under the message.
+-->
+{#if runner.phase === 'paused'}
+	<div
+		class="bg-bg/70 fixed inset-0 z-40 flex flex-col items-center justify-center gap-5 px-6 backdrop-blur-md"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="paused-title"
+	>
+		<span class="bg-surface-raised border-line text-warning grid size-16 place-items-center rounded-2xl border">
+			<Icon name="pause" size={30} />
+		</span>
+		<div class="text-center">
+			<h2 id="paused-title" class="text-ink text-3xl font-semibold">Paused</h2>
+			<p class="text-ink-muted mt-1.5 text-sm">The clock is stopped — this time does not count.</p>
+		</div>
+		<Button variant="primary" size="lg" icon="play" class="w-full max-w-xs" onclick={() => runner.togglePause()}>
+			Continue
+		</Button>
+	</div>
+{/if}
+
+<!--
+	The countdown beeps and step tones, at a level kept on this device. The run
+	keeps going underneath, so the next real beep is a test too.
+-->
+<Modal bind:open={soundOpen} title="Timer sound" size="sm">
+	<div class="flex flex-col gap-4">
+		<div class="flex items-center gap-3">
+			<button
+				type="button"
+				class="text-ink-muted hover:text-ink grid size-10 shrink-0 place-items-center rounded-lg border border-line"
+				onclick={() => sound.toggleMute()}
+				aria-label={sound.muted ? 'Unmute' : 'Mute'}
+			>
+				<Icon name={sound.muted ? 'volumeOff' : 'volume'} size={18} />
+			</button>
+			<input
+				type="range"
+				min="0"
+				max="100"
+				step="5"
+				bind:value={volumeProxy.value}
+				onchange={() => playTone(660, 80)}
+				class="accent-accent h-10 min-w-0 flex-1"
+				aria-label="Volume"
+			/>
+			<span class="text-ink tabular w-11 shrink-0 text-right text-sm font-medium">
+				{sound.muted ? 'Off' : `${sound.volume}%`}
+			</span>
+		</div>
+		<p class="text-ink-subtle text-[13px] leading-relaxed">
+			The beeps in the last seconds of a countdown and the tone when a step ends. Saved on this
+			device.
+		</p>
+	</div>
+	{#snippet footer()}
+		<Button variant="ghost" icon="play" onclick={() => playTone(660, 80)} disabled={sound.muted}>
+			Test
+		</Button>
+		<Button variant="primary" onclick={() => (soundOpen = false)}>Done</Button>
+	{/snippet}
+</Modal>
 
 <!--
 	Leaving ends the run — there is no resuming it — so this asks what to do with

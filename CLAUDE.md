@@ -180,9 +180,10 @@ file.
   change on every save. Nothing may store those ids long-term — this is exactly
   why workouts snapshot their plan.
 - **`workouts` has no FK to `sessions`** on purpose. Do not add one.
-- **`totalMs` is clock time, breaks included** — first step started to last
-  step finished. Keep it derived from the step logs in `refreshTotals`; never set
-  it from `Date.now()` on the server, whose clock is not the phone's.
+- **`totalMs` is training time: rests in, pauses out** — the sum of the step
+  logs' `durationMs`, each of which already excludes paused time. Keep it derived
+  in `refreshTotals`, and keep the runner's `totalElapsedMs` the same sum; never
+  set it from `Date.now()` differences on the server.
 - **`finish` is idempotent and may delete.** A closed tab sends it by beacon,
   possibly after the leave dialog already did; ending a run with nothing done
   deletes it and returns `null`.

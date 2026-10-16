@@ -93,7 +93,7 @@ export interface WeeklyVolumePoint {
 export interface OverviewMetrics {
 	/** Every recorded workout, whatever its outcome. */
 	totalWorkouts: number;
-	/** Clock time across those workouts, breaks included. */
+	/** Training time across those workouts — rests in, pauses out. */
 	totalMs: number;
 	activeDays: number;
 	sessionsPracticed: number;

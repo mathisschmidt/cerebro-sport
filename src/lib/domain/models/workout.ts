@@ -97,7 +97,7 @@ export const workoutStepLogInputSchema = z.object({
 	plannedRestSec: z.number().int().min(0).nullable().default(null),
 	/** What was actually achieved: reps done, seconds held, metres covered. */
 	actualValue: z.number().min(0).nullable().default(null),
-	/** Wall-clock time the athlete spent on this step. */
+	/** Time on this step with any pause taken out. */
 	durationMs: z.number().int().min(0),
 	skipped: z.boolean().default(false),
 	startedAt: isoDateTimeSchema,
@@ -128,9 +128,9 @@ export const workoutSchema = z.object({
 	startedAt: isoDateTimeSchema,
 	completedAt: isoDateTimeSchema.nullable(),
 	/**
-	 * Clock time from the start of the first step to the end of the last one.
-	 * Pauses and breaks are included — that is how long the session took. Both
-	 * ends come from the step logs, so the phone's clock is the only clock used.
+	 * Training time: every step's time summed, rests included, pauses excluded.
+	 * A pause means the athlete stopped training — an interruption, not part of
+	 * the session — so it never counts. Measured on the phone, per step.
 	 */
 	totalMs: z.number().int().min(0),
 	/** Steps done, not skipped. Against `plannedStepCount`, this is the outcome. */

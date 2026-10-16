@@ -19,6 +19,8 @@
 		skip: '<path d="M5 4.5 15 12 5 19.5zM19 5v14"/>',
 		trash: '<path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/>',
 		pencil: '<path d="M4 20h4L20 8l-4-4L4 16z"/>',
+		volume: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/>',
+		volumeOff: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="m17 9 5 6"/><path d="m22 9-5 6"/>',
 		search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
 		filter: '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
 		tag: '<path d="M3 12.5V4a1 1 0 0 1 1-1h8.5L21 11.5 12.5 20z"/><path d="M7.5 7.5v.01"/>',

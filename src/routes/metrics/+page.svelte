@@ -62,7 +62,7 @@
 			<Stat
 				label="Total time"
 				value={formatDuration(overview.totalMs)}
-				caption="start to end, breaks included"
+				caption="pauses not counted"
 				icon="clock"
 				accent
 			/>

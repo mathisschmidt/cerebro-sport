@@ -103,16 +103,18 @@ Drizzle adapter.
 - **Admin** (`/admin`, admins only) — registration, accounts and roles.
 - **Runner** (`/run/[id]`) — full-screen, one-handed. Countdown for timed work, a
   big *Done* button for reps, audio and haptic cues, a screen wake lock, and
-  keyboard shortcuts on desktop (`space`, `←`, `→`). Leaving asks whether to
-  save or discard the run — see below.
+  keyboard shortcuts on desktop (`space`, `←`, `→`). The speaker button sets the
+  volume of the countdown beeps and step tones, saved per device. Leaving asks
+  whether to save or discard the run — see below.
 
 ### How runs are measured
 
 One rule set, used by every screen that shows a run:
 
-- **Total time is the clock**, from the start of the first step to the end of
-  the last one. Pauses and breaks are included — it is how long the session
-  took. It is the only time the metrics use.
+- **Total time is training time**: every step's time summed, rests included,
+  **pauses excluded**. Pausing means you stopped training — something urgent,
+  not part of the session — so the clock stops and none of it counts. It is the
+  only time the metrics use.
 - **A run is never resumed.** Leaving ends it, however it happens. The leave
   button asks to **save** (kept, with its outcome) or **discard** (deleted); a
   closed tab or a reload saves what was done; starting another session ends the
@@ -364,9 +366,9 @@ paused or edited — is still surfaced, so past adherence never rewrites itself.
 A `workout` stores a frozen copy of the plan it ran and has **no foreign key to
 the session**. Edit a session and last month's numbers still describe what you
 actually did; delete one and the history survives. `totalMs` is derived from
-the step logs — first step started to last step finished, both stamped by the
-phone — so it is never a difference against the server's clock, and because a
-run cannot be resumed, a phone left on the bench overnight cannot stretch one.
+the step logs — each step's time with pauses taken out, measured on the phone —
+so it is never a difference against the server's clock, and because a run
+cannot be resumed, a phone left on the bench overnight cannot stretch one.
 
 ### Swapping SQLite out
 

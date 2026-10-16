@@ -168,30 +168,26 @@ export const workoutRepository = {
 
 	/**
 	 * Recomputes the workout's rollups from its step logs, which are the only
-	 * source of truth for how long a session took: from the start of the first
-	 * step to the end of the last, pauses included. Skipped steps still mark
-	 * time passing, so they count towards the span but not as done.
+	 * source of truth for how long a session took. Each log's `durationMs` is
+	 * the time on that step with pauses taken out, and steps follow each other
+	 * with no gap, so their sum is the training time: rests in, pauses out.
+	 * Time on a step later skipped was still spent, so it counts too — a skipped
+	 * step only stops counting as done.
 	 */
 	refreshTotals(workoutId: string): void {
 		const totals = db
 			.select({
 				completed: sql<number>`coalesce(sum(case when ${workoutSteps.skipped} then 0 else 1 end), 0)`,
-				firstStartedAt: sql<string | null>`min(${workoutSteps.startedAt})`,
-				lastCompletedAt: sql<string | null>`max(${workoutSteps.completedAt})`
+				trainingMs: sql<number>`coalesce(sum(${workoutSteps.durationMs}), 0)`
 			})
 			.from(workoutSteps)
 			.where(eq(workoutSteps.workoutId, workoutId))
 			.get();
 
-		const span =
-			totals?.firstStartedAt && totals.lastCompletedAt
-				? Date.parse(totals.lastCompletedAt) - Date.parse(totals.firstStartedAt)
-				: 0;
-
 		db.update(workouts)
 			.set({
 				completedStepCount: totals?.completed ?? 0,
-				totalMs: Math.max(0, Math.round(span)),
+				totalMs: totals?.trainingMs ?? 0,
 				updatedAt: new Date().toISOString()
 			})
 			.where(eq(workouts.id, workoutId))
