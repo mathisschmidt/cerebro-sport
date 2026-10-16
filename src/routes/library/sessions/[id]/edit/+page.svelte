@@ -14,4 +14,4 @@
 	back={{ href: `/library/sessions/${data.session.id}`, label: data.session.name }}
 />
 
-<SessionEditor session={data.session} exercises={data.exercises} />
+<SessionEditor session={data.session} exercises={data.exercises} historyCount={data.historyCount} />

@@ -75,13 +75,13 @@
 			Your history
 			{#if data.metrics.runCount > 0}
 				<span class="text-ink-subtle ml-1 font-normal normal-case">
-					· {data.metrics.runCount} run{data.metrics.runCount > 1 ? 's' : ''},
+					· {data.metrics.runCount} completed,
 					{formatDuration(data.metrics.duration.average)} on average
 				</span>
 			{/if}
 		</h2>
 
-		{#if data.metrics.runCount === 0}
+		{#if data.metrics.runs.length === 0}
 			<Card>
 				<p class="text-ink-subtle py-6 text-center text-[13px]">
 					No runs yet. Start the session and it will start tracking itself.

@@ -2,10 +2,10 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import type { RoutineOccurrence } from '$domain/models/routine.ts';
 	import { formatDuration } from '$domain/models/common.ts';
-	import { formatDateLabel, formatDateTimeLabel } from '$domain/services/date.ts';
+	import { workoutOutcome } from '$domain/models/workout.ts';
+	import { formatDateLabel } from '$domain/services/date.ts';
 	import { api, ApiError } from '$client/api.ts';
 	import { toasts } from '$client/toast.svelte.ts';
-	import Badge from '$components/ui/Badge.svelte';
 	import Button from '$components/ui/Button.svelte';
 	import Card from '$components/ui/Card.svelte';
 	import EmptyState from '$components/ui/EmptyState.svelte';
@@ -14,6 +14,7 @@
 	import Stat from '$components/ui/Stat.svelte';
 	import ActivityHeatmap from '$components/charts/ActivityHeatmap.svelte';
 	import OccurrenceCard from '$components/routines/OccurrenceCard.svelte';
+	import OutcomeBadge from '$components/metrics/OutcomeBadge.svelte';
 	import type { PageData } from './$types.ts';
 
 	let { data }: { data: PageData } = $props();
@@ -27,9 +28,6 @@
 
 	const adherence7 = $derived(
 		data.streak.last7.rate === null ? '—' : `${Math.round(data.streak.last7.rate * 100)}%`
-	);
-	const weekActiveMs = $derived(
-		data.streak.calendar.slice(-7).reduce((sum, day) => sum + day.activeMs, 0)
 	);
 
 	async function startSession(sessionId: string, occurrence?: RoutineOccurrence) {
@@ -78,26 +76,6 @@
 		</h1>
 	</header>
 
-	{#if data.activeWorkout}
-		<a
-			href="/run/{data.activeWorkout.id}"
-			class="border-accent bg-accent-soft flex items-center gap-3 rounded-2xl border p-3.5 transition-opacity hover:opacity-90"
-		>
-			<span class="bg-accent text-accent-ink grid size-9 shrink-0 place-items-center rounded-xl">
-				<Icon name="play" size={16} filled />
-			</span>
-			<div class="min-w-0 flex-1">
-				<p class="text-ink text-sm font-semibold">Session in progress</p>
-				<p class="text-ink-muted truncate text-[12px]">
-					{data.activeWorkout.sessionName} · started {formatDateTimeLabel(
-						data.activeWorkout.startedAt
-					)}
-				</p>
-			</div>
-			<span class="text-accent shrink-0"><Icon name="chevronRight" size={18} /></span>
-		</a>
-	{/if}
-
 	<!-- Today's routines -->
 	<section class="flex flex-col gap-2.5">
 		<div class="flex items-center justify-between">
@@ -140,7 +118,7 @@
 	<section class="flex flex-col gap-3">
 		<h2 class="text-ink text-[13px] font-semibold tracking-wide uppercase">Consistency</h2>
 
-		<div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+		<div class="grid grid-cols-3 gap-2.5">
 			<Stat
 				label="Current streak"
 				value="{data.streak.currentStreak}d"
@@ -153,12 +131,6 @@
 				value={adherence7}
 				caption="{data.streak.last7.completed}/{data.streak.last7.due} routines"
 				icon="target"
-			/>
-			<Stat
-				label="Trained this week"
-				value={formatDuration(weekActiveMs)}
-				caption="active time"
-				icon="clock"
 			/>
 			<Stat
 				label="Done today"
@@ -188,11 +160,8 @@
 								{formatDateLabel(occurrence.date, data.today)}
 							</span>
 							<span class="text-ink min-w-0 flex-1 truncate text-[13px]">
-								{occurrence.routineName}
+								{occurrence.sessionName}
 							</span>
-							{#if occurrence.timeOfDay}
-								<Badge>{occurrence.timeOfDay}</Badge>
-							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -213,12 +182,7 @@
 						<li class="border-line flex items-center gap-3 border-b px-4 py-2.5 last:border-b-0">
 							<span class="text-ink-subtle shrink-0"><Icon name="history" size={15} /></span>
 							<span class="text-ink min-w-0 flex-1 truncate text-[13px]">{workout.sessionName}</span>
-							<span class="text-ink-subtle shrink-0 text-[12px]">
-								{formatDateTimeLabel(workout.startedAt)}
-							</span>
-							<span class="text-ink tabular shrink-0 text-[12px] font-medium">
-								{formatDuration(workout.totalMs)}
-							</span>
+							<OutcomeBadge outcome={workoutOutcome(workout)} />
 						</li>
 					{/each}
 				</ul>

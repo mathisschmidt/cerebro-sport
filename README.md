@@ -90,18 +90,57 @@ Drizzle adapter.
 
 ## The pages
 
-- **Today** (`/`) — routines due today, ticked off or started from here; streak,
-  adherence and a training calendar; what is coming later this week.
+- **Today** (`/`) — what is on the plan today (routine and session), ticked off
+  or started from here; streak, last 7 days and today's tally; the training
+  calendar; the sessions coming later this week; recent sessions with how each
+  one went.
 - **Library** (`/library`) — three tabs: sessions, exercises, routines.
 - **Coach** (`/coach`) — describe what you want, get a prompt to paste into any
   AI chat, paste the answer back to import it. See below.
-- **Metrics** (`/metrics`) — overall volume and consistency, then a per-session
-  breakdown down to the pace of each individual step.
+- **Metrics** (`/metrics`) — overall volume and consistency, then each session's
+  progress in total time, with its run history.
 - **Account** (`/account`) — change your username or password.
 - **Admin** (`/admin`, admins only) — registration, accounts and roles.
 - **Runner** (`/run/[id]`) — full-screen, one-handed. Countdown for timed work, a
   big *Done* button for reps, audio and haptic cues, a screen wake lock, and
-  keyboard shortcuts on desktop (`space`, `←`, `→`).
+  keyboard shortcuts on desktop (`space`, `←`, `→`). Leaving asks whether to
+  save or discard the run — see below.
+
+### How runs are measured
+
+One rule set, used by every screen that shows a run:
+
+- **Total time is the clock**, from the start of the first step to the end of
+  the last one. Pauses and breaks are included — it is how long the session
+  took. It is the only time the metrics use.
+- **A run is never resumed.** Leaving ends it, however it happens. The leave
+  button asks to **save** (kept, with its outcome) or **discard** (deleted); a
+  closed tab or a reload saves what was done; starting another session ends the
+  one still open. A run left with no step done is simply deleted.
+- **Every run gets an outcome** from the share of its steps not done (skipped,
+  or never reached):
+
+  | Outcome | Steps missed | Colour |
+  | --- | --- | --- |
+  | Completed | none | green |
+  | Not finished | up to 30% | green |
+  | Skipped a few | more than 30% | yellow |
+  | Ended early | more than 50% | red |
+
+- **A session's stats — last, best, average, trend and the progress chart —
+  use completed runs only.** Any missed step makes a run "faster", so it would
+  make progress meaningless. Every run still appears in the session's history
+  with its outcome, and counts in the overall volume and the calendar.
+- **The training calendar has three states**: green when you trained (planned
+  or not), red when something was due and nothing was done, and the empty cell
+  when nothing was planned and nothing done. Today is never red while it is
+  still running.
+- A scheduled routine is ticked off only by a completed run.
+- **Editing what a session runs offers to reset its history.** When the blocks,
+  exercises, measures or rests change and the session already has runs, saving
+  asks whether to keep them or start over. Renaming or rewording never asks.
+  A reset deletes the session's runs but keeps routine ticks, so streaks and the
+  calendar's planned days stay as they were.
 
 ---
 
@@ -310,9 +349,9 @@ and the editor simple.
 
 **The plan is derived, not stored.** `buildPlan()` flattens a session into a
 linear list of steps with rest materialised. The editor preview, the duration
-estimate, the runner and the metrics all consume that one function, so they
-cannot drift apart. Every step carries a `key` that is stable across executions
-— that key is what makes "am I faster on round 4 of push-ups?" answerable.
+estimate and the runner both consume that one function, so they cannot drift
+apart. Every step carries a `key` that is stable across executions, and every
+step log stores it, so a per-step history can always be rebuilt from the logs.
 
 **Occurrences are computed; only deviations are stored.** A routine holds a rule,
 not a list of dates. `routine_occurrences` gets a row only when something is
@@ -324,9 +363,10 @@ paused or edited — is still surfaced, so past adherence never rewrites itself.
 
 A `workout` stores a frozen copy of the plan it ran and has **no foreign key to
 the session**. Edit a session and last month's numbers still describe what you
-actually did; delete one and the history survives. `totalMs` is the sum of
-measured step durations rather than wall-clock time, so a phone left locked
-mid-session cannot report an hour of "training".
+actually did; delete one and the history survives. `totalMs` is derived from
+the step logs — first step started to last step finished, both stamped by the
+phone — so it is never a difference against the server's clock, and because a
+run cannot be resumed, a phone left on the bench overnight cannot stretch one.
 
 ### Swapping SQLite out
 
@@ -355,10 +395,11 @@ utilities with `@theme inline` so `bg-surface` follows the theme instead of
 baking in a colour. Light and dark are both first-class; the theme is applied
 before first paint by an inline script, so it never flashes.
 
-Chart colours are not hand-picked: the sequential ramp and the series colour were
-validated per theme for monotone lightness, visible step gaps and contrast
-against their own surface. Status colours (faster / slower) always ship with an
-arrow and a word, never colour alone.
+Chart colours are not hand-picked: the series colour and the good / critical pair
+were validated per theme with the dataviz skill's script — contrast against
+their own surface, and colour-blind separation for the green/red pair the
+training calendar relies on. Status colours (faster / slower, run outcomes)
+always ship with an arrow or a word, never colour alone.
 
 ---
 
@@ -380,7 +421,7 @@ src/
     client/                   typed API client, runner state machine, stores
     components/
       ui/                     primitives (button, modal, field, stat…)
-      charts/                 line, bar, sparkline, heatmap, trend pill
+      charts/                 line, bar, training calendar, trend pill
       exercises/ sessions/ routines/ runner/ metrics/ coach/ shared/
   routes/
     +page.svelte              Today

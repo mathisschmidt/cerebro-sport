@@ -38,17 +38,14 @@
 	--app-shadow-lg: 0 24px 60px -24px rgb(0 0 0 / 0.8);
 
 	/*
-	 * Data-visualisation slots. The series colour and the 4-step magnitude ramp
-	 * are validated against this surface (ordinal gate: monotone lightness,
-	 * >=0.06 lightness gaps, nearest-surface step >=2:1) rather than eyeballed.
+	 * Data-visualisation slots, validated against this surface rather than
+	 * eyeballed. `good` and `critical` are the training calendar's trained and
+	 * missed: as a pair they hold colour-blind separation (deutan ΔE ≥ 8) and
+	 * ≥3:1 contrast against the surface.
 	 */
 	--viz-series: #c9f227;
 	--viz-series-wash: color-mix(in oklab, #c9f227 12%, transparent);
 	--viz-grid: #242c36;
-	--viz-ramp-1: #43511f;
-	--viz-ramp-2: #6f8622;
-	--viz-ramp-3: #9cbc24;
-	--viz-ramp-4: #c9f227;
 	--viz-good: #3ddc97;
 	--viz-critical: #ff6b6b;
 	--viz-surface: #151a21;
@@ -87,12 +84,10 @@
 	--viz-series: #6f8622;
 	--viz-series-wash: color-mix(in oklab, #6f8622 12%, transparent);
 	--viz-grid: #e0e5ec;
-	--viz-ramp-1: #a4c129;
-	--viz-ramp-2: #7e961f;
-	--viz-ramp-3: #596b14;
-	--viz-ramp-4: #33400a;
+	/* Red darkened from #d64545: against this green it was ΔE 5.3 for deutan
+	 * vision, below the floor; #9e2a2a separates them by lightness (ΔE 14.9). */
 	--viz-good: #12a06a;
-	--viz-critical: #d64545;
+	--viz-critical: #9e2a2a;
 	--viz-surface: #ffffff;
 }
 

@@ -150,6 +150,19 @@ export const routineRepository = {
 			}));
 	},
 
+	/**
+	 * Unlinks occurrences from workouts that no longer exist. The tick itself
+	 * stays: the routine was honoured that day whether or not its run is kept.
+	 * Callers pass ids of workouts they have already established are the user's.
+	 */
+	detachWorkouts(workoutIds: string[]): void {
+		if (workoutIds.length === 0) return;
+		db.update(routineOccurrences)
+			.set({ workoutId: null })
+			.where(inArray(routineOccurrences.workoutId, workoutIds))
+			.run();
+	},
+
 	/** Upserts a deviation; `pending` clears the row so absence stays the default. */
 	/** Callers must have already established that the routine belongs to the user. */
 	resolveOccurrence(resolution: OccurrenceResolution): void {

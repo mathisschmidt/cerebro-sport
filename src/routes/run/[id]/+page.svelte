@@ -1,13 +1,14 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import { onDestroy, onMount } from 'svelte';
 	import { formatClock, formatDuration, formatMeasure } from '$domain/models/common.ts';
 	import { planStepLabel } from '$domain/models/plan.ts';
+	import { WORKOUT_OUTCOME_LABEL, workoutOutcome } from '$domain/models/workout.ts';
 	import { WorkoutRunner, playTone } from '$client/runner.svelte.ts';
 	import { toasts } from '$client/toast.svelte.ts';
 	import Button from '$components/ui/Button.svelte';
-	import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
 	import Icon from '$components/ui/Icon.svelte';
+	import Modal from '$components/ui/Modal.svelte';
 	import NumberStepper from '$components/ui/NumberStepper.svelte';
 	import TimerRing from '$components/runner/TimerRing.svelte';
 	import RunnerSummary from '$components/runner/RunnerSummary.svelte';
@@ -16,23 +17,61 @@
 	let { data }: { data: PageData } = $props();
 
 	// The runner is built once from the loaded workout and then owns the run;
-	// a re-created runner mid-session would reset every timer. Reopening an
-	// interrupted workout resumes at the first unlogged step.
+	// a re-created runner mid-session would reset every timer. The load only
+	// ever hands over a fresh run — a run is never resumed.
 	// svelte-ignore state_referenced_locally
-	const runner = new WorkoutRunner(data.workout.id, data.workout.plan, data.workout.startedAt, {
-		startIndex: WorkoutRunner.resumeIndexFrom(
-			data.workout.plan,
-			data.workout.steps.map((log) => log.stepIndex)
-		)
-	});
-	// svelte-ignore state_referenced_locally
-	runner.seedMeasured(
-		data.workout.steps.reduce((sum, log) => sum + (log.skipped ? 0 : log.durationMs), 0)
-	);
+	const runner = new WorkoutRunner(data.workout.id, data.workout.plan);
 
 	let notes = $state('');
 	let saving = $state(false);
-	let abandonOpen = $state(false);
+	let leaveOpen = $state(false);
+	let discarding = $state(false);
+	/** Whether opening the leave dialog paused the run, so staying can undo it. */
+	let pausedForLeave = false;
+	/** Set once the run has been saved or discarded, so navigating away is allowed. */
+	let ended = false;
+
+	/** How the run would show if left now — the same scale as everywhere else. */
+	const leaveOutcome = $derived(
+		WORKOUT_OUTCOME_LABEL[
+			workoutOutcome({
+				status: 'abandoned',
+				completedStepCount: runner.recordedCount,
+				plannedStepCount: runner.plan.steps.length
+			})
+		]
+	);
+
+	// Leaving ends the run, so in-app navigation goes through the leave dialog
+	// rather than slipping past it. Closing the tab cannot be stopped; that is
+	// what `pagehide` is for.
+	beforeNavigate((navigation) => {
+		if (ended || navigation.type === 'leave') return;
+		navigation.cancel();
+		// On the summary every step is behind the athlete: leaving is finishing.
+		if (runner.phase === 'finished') void save('completed');
+		else if (!leaveOpen) openLeave();
+	});
+
+	// A closed tab or a reload still ends the run. With nothing done there is
+	// nothing to end — the empty run is cleared the next time one starts.
+	function onpagehide() {
+		if (ended) return;
+		if (runner.recordedCount > 0 || runner.phase === 'finished') runner.endOnUnload();
+	}
+
+	// Time spent deciding whether to leave is not training time.
+	function openLeave() {
+		pausedForLeave = runner.phase === 'running';
+		if (pausedForLeave) runner.togglePause();
+		leaveOpen = true;
+	}
+
+	function stay() {
+		leaveOpen = false;
+		if (pausedForLeave && runner.phase === 'paused') runner.togglePause();
+		pausedForLeave = false;
+	}
 	let showInstructions = $state(false);
 	let lastBeepSecond = -1;
 
@@ -70,6 +109,7 @@
 	});
 
 	function onkeydown(event: KeyboardEvent) {
+		if (leaveOpen) return;
 		if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) return;
 		if (event.key === ' ') {
 			event.preventDefault();
@@ -81,10 +121,12 @@
 	}
 
 	async function save(status: 'completed' | 'abandoned') {
+		if (saving) return;
 		saving = true;
 		try {
 			await runner.finish(status, notes.trim());
-			toasts.success(status === 'completed' ? 'Session saved' : 'Session closed');
+			ended = true;
+			toasts.success(status === 'completed' ? 'Session saved' : 'Saved — it counts in your metrics');
 			await goto('/', { invalidateAll: true });
 		} catch {
 			toasts.error('Could not save — check your connection and try again');
@@ -92,17 +134,31 @@
 			saving = false;
 		}
 	}
+
+	async function discard() {
+		discarding = true;
+		try {
+			await runner.discard();
+			ended = true;
+			toasts.success('Session discarded');
+			await goto('/', { invalidateAll: true });
+		} catch {
+			toasts.error('Could not discard — check your connection and try again');
+		} finally {
+			discarding = false;
+		}
+	}
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} {onpagehide} />
 <svelte:head><title>{data.workout.sessionName} — running</title></svelte:head>
 
 <div class="bg-bg text-ink flex min-h-[100dvh] flex-col">
 	{#if runner.phase === 'finished'}
 		<RunnerSummary
 			plan={runner.plan}
-			totalMs={runner.measuredMs}
-			completedSteps={runner.index + 1}
+			totalMs={runner.totalElapsedMs}
+			completedSteps={runner.recordedCount}
 			bind:notes
 			{saving}
 			onsave={() => save('completed')}
@@ -114,7 +170,7 @@
 				<button
 					type="button"
 					class="text-ink-subtle hover:text-ink -ml-2 grid size-10 shrink-0 place-items-center rounded-lg"
-					onclick={() => (abandonOpen = true)}
+					onclick={openLeave}
 					aria-label="Leave the session"
 				>
 					<Icon name="close" size={20} />
@@ -269,11 +325,35 @@
 	{/if}
 </div>
 
-<ConfirmDialog
-	bind:open={abandonOpen}
-	title="Leave this session?"
-	message="Everything you have already done is saved. The session will be marked as abandoned."
-	confirmLabel="Leave"
-	danger
-	onconfirm={() => save('abandoned')}
-/>
+<!--
+	Leaving ends the run — there is no resuming it — so this asks what to do with
+	what was done. Saved, it is kept with its outcome; discarded, it is deleted.
+	With nothing done yet there is nothing to save, so the choice is only whether
+	to leave.
+-->
+<Modal bind:open={leaveOpen} title="Leave this session?" size="sm" onclose={stay}>
+	{#if runner.recordedCount > 0}
+		<p class="text-ink-muted text-sm leading-relaxed">
+			You have done {runner.recordedCount} of {runner.plan.steps.length} steps. Leaving ends this
+			run — it cannot be picked up again. Save it and it is kept as
+			<strong class="text-ink font-medium">{leaveOutcome}</strong>: it counts in your volume and
+			calendar, but not in this session's time stats, which only use fully completed runs. Discard
+			it and it is deleted.
+		</p>
+	{:else}
+		<p class="text-ink-muted text-sm leading-relaxed">
+			No step is done yet, so there is nothing to save. Leaving discards this run.
+		</p>
+	{/if}
+	{#snippet footer()}
+		<Button variant="ghost" onclick={stay}>Keep going</Button>
+		<Button variant="danger" loading={discarding} disabled={saving} onclick={discard}>
+			{runner.recordedCount > 0 ? 'Discard' : 'Leave'}
+		</Button>
+		{#if runner.recordedCount > 0}
+			<Button variant="primary" loading={saving} disabled={discarding} onclick={() => save('abandoned')}>
+				Save & leave
+			</Button>
+		{/if}
+	{/snippet}
+</Modal>

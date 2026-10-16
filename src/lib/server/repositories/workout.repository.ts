@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { asc, desc, eq, gte, inArray, lte, ne, sql } from 'drizzle-orm';
 import type { SessionPlan } from '$domain/models/plan.ts';
 import type {
 	Workout,
@@ -168,28 +168,30 @@ export const workoutRepository = {
 
 	/**
 	 * Recomputes the workout's rollups from its step logs, which are the only
-	 * source of truth for how long a session took.
+	 * source of truth for how long a session took: from the start of the first
+	 * step to the end of the last, pauses included. Skipped steps still mark
+	 * time passing, so they count towards the span but not as done.
 	 */
 	refreshTotals(workoutId: string): void {
 		const totals = db
 			.select({
-				completed: sql<number>`count(*)`,
-				activeMs: sql<number>`coalesce(sum(case when ${workoutSteps.kind} = 'exercise' then ${workoutSteps.durationMs} else 0 end), 0)`,
-				restMs: sql<number>`coalesce(sum(case when ${workoutSteps.kind} = 'rest' then ${workoutSteps.durationMs} else 0 end), 0)`
+				completed: sql<number>`coalesce(sum(case when ${workoutSteps.skipped} then 0 else 1 end), 0)`,
+				firstStartedAt: sql<string | null>`min(${workoutSteps.startedAt})`,
+				lastCompletedAt: sql<string | null>`max(${workoutSteps.completedAt})`
 			})
 			.from(workoutSteps)
-			.where(and(eq(workoutSteps.workoutId, workoutId), eq(workoutSteps.skipped, false)))
+			.where(eq(workoutSteps.workoutId, workoutId))
 			.get();
 
-		const activeMs = totals?.activeMs ?? 0;
-		const restMs = totals?.restMs ?? 0;
+		const span =
+			totals?.firstStartedAt && totals.lastCompletedAt
+				? Date.parse(totals.lastCompletedAt) - Date.parse(totals.firstStartedAt)
+				: 0;
 
 		db.update(workouts)
 			.set({
 				completedStepCount: totals?.completed ?? 0,
-				activeMs,
-				restMs,
-				totalMs: activeMs + restMs,
+				totalMs: Math.max(0, Math.round(span)),
 				updatedAt: new Date().toISOString()
 			})
 			.where(eq(workouts.id, workoutId))
@@ -222,6 +224,32 @@ export const workoutRepository = {
 		return db.transaction((tx) => {
 			tx.delete(workoutSteps).where(eq(workoutSteps.workoutId, id)).run();
 			return tx.delete(workouts).where(eq(workouts.id, id)).run().changes > 0;
+		});
+	},
+
+	/**
+	 * Deletes every finished run of a session, with its step logs, and returns
+	 * their ids. A run still in progress is left alone — it is not history yet.
+	 */
+	removeFinishedForSession(userId: string, sessionId: string): string[] {
+		return db.transaction((tx) => {
+			const ids = tx
+				.select({ id: workouts.id })
+				.from(workouts)
+				.where(
+					ownedBy(
+						workouts.userId,
+						userId,
+						eq(workouts.sessionId, sessionId),
+						ne(workouts.status, 'in_progress')
+					)
+				)
+				.all()
+				.map((row) => row.id);
+			if (ids.length === 0) return ids;
+			tx.delete(workoutSteps).where(inArray(workoutSteps.workoutId, ids)).run();
+			tx.delete(workouts).where(inArray(workouts.id, ids)).run();
+			return ids;
 		});
 	},
 

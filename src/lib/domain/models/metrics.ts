@@ -1,5 +1,5 @@
-import type { IsoDate, IsoDateTime, Id, Measure } from './common.ts';
-import type { PlanStepKind } from './plan.ts';
+import type { IsoDate, IsoDateTime, Id } from './common.ts';
+import type { WorkoutOutcome } from './workout.ts';
 
 /**
  * Read models. Nothing here is ever received from a client or written to the
@@ -9,45 +9,20 @@ import type { PlanStepKind } from './plan.ts';
 
 export type TrendDirection = 'faster' | 'slower' | 'flat' | 'unknown';
 
-/** One execution, reduced to the numbers a chart needs. */
+/** One fully completed run — a point on the session's progress chart. */
 export interface SessionMetricPoint {
 	workoutId: Id;
 	date: IsoDate;
 	startedAt: IsoDateTime;
 	totalMs: number;
-	activeMs: number;
-	restMs: number;
-	/** Steps completed over steps planned, 0–1. */
-	completionRate: number;
 }
 
-export interface StepSample {
+/** Any recorded run of a session, for its history list: when, and how it went. */
+export interface SessionRun {
 	workoutId: Id;
 	date: IsoDate;
-	durationMs: number;
-	actualValue: number | null;
-}
-
-/** How one step of a session has evolved across executions. */
-export interface StepProgress {
-	stepKey: string;
-	label: string;
-	kind: PlanStepKind;
-	blockIndex: number;
-	blockLabel: string;
-	roundIndex: number;
-	roundCount: number;
-	itemIndex: number | null;
-	exerciseId: Id | null;
-	measure: Measure | null;
-	samples: StepSample[];
-	firstMs: number;
-	latestMs: number;
-	bestMs: number;
-	averageMs: number;
-	/** Latest against the average of everything before it. Negative = faster. */
-	deltaPct: number | null;
-	trend: TrendDirection;
+	startedAt: IsoDateTime;
+	outcome: WorkoutOutcome;
 }
 
 export interface DurationStats {
@@ -60,22 +35,33 @@ export interface DurationStats {
 export interface SessionMetrics {
 	sessionId: Id;
 	sessionName: string;
+	/** Fully completed runs. Duration stats, trend and history use only these. */
 	runCount: number;
+	/** Latest recorded run of any outcome. */
 	lastRunAt: IsoDateTime | null;
 	duration: DurationStats;
 	deltaPct: number | null;
 	trend: TrendDirection;
+	/** Fully completed runs, oldest first. */
 	history: SessionMetricPoint[];
-	steps: StepProgress[];
+	/** Every recorded run, newest first, each with its outcome. */
+	runs: SessionRun[];
 }
+
+/**
+ * A day on the training calendar:
+ *  - `trained` a workout was recorded or a routine ticked off, planned or not
+ *  - `missed`  something was due and nothing was done (never today, which is not over)
+ *  - `idle`    nothing planned, nothing done
+ */
+export type CalendarDayState = 'trained' | 'missed' | 'idle';
 
 export interface CalendarDay {
 	date: IsoDate;
 	due: number;
 	completed: number;
-	skipped: number;
 	workouts: number;
-	activeMs: number;
+	state: CalendarDayState;
 }
 
 export interface AdherenceWindow {
@@ -102,15 +88,16 @@ export interface WeeklyVolumePoint {
 	weekStart: IsoDate;
 	workouts: number;
 	totalMs: number;
-	activeMs: number;
 }
 
 export interface OverviewMetrics {
+	/** Every recorded workout, whatever its outcome. */
 	totalWorkouts: number;
+	/** Clock time across those workouts, breaks included. */
 	totalMs: number;
-	activeMs: number;
 	activeDays: number;
 	sessionsPracticed: number;
+	/** Over fully completed runs only — a half session is not an average session. */
 	averageWorkoutMs: number;
 	weekly: WeeklyVolumePoint[];
 }

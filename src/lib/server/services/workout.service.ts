@@ -7,6 +7,7 @@ import type {
 	WorkoutStepLog,
 	WorkoutStepLogInput
 } from '$domain/models/workout.ts';
+import { isRecorded } from '$domain/models/workout.ts';
 import { workoutRepository } from '../repositories/workout.repository.ts';
 import { routineRepository } from '../repositories/routine.repository.ts';
 import { sessionService } from './session.service.ts';
@@ -17,8 +18,10 @@ import { badRequest, notFound } from '../http/errors.ts';
  *
  * A workout freezes the plan it started from, so editing the session afterwards
  * never rewrites what was actually done. Steps are logged as they finish rather
- * than in one batch at the end, which is what makes an interrupted session
- * resumable instead of lost.
+ * than in one batch at the end, so leaving mid-session keeps what was done.
+ *
+ * A run is never resumed. However it is left — the leave dialog, a closed tab,
+ * a reload, starting another session — it ends there, through `finish`.
  */
 export const workoutService = {
 	start(userId: string, input: WorkoutStart): WorkoutDetail {
@@ -28,11 +31,9 @@ export const workoutService = {
 			throw badRequest('This session has no steps to run');
 		}
 
-		// Only one workout can be in flight; picking up a new one closes the old.
+		// Only one workout can be in flight; starting a new one ends the old.
 		const active = workoutRepository.findActive(userId);
-		if (active) {
-			workoutRepository.finish(userId, active.id, { status: 'abandoned', notes: active.notes });
-		}
+		if (active) this.leave(userId, active.id);
 
 		const workout = workoutRepository.create({
 			userId,
@@ -52,13 +53,35 @@ export const workoutService = {
 		return workout;
 	},
 
-	/** The workout to offer as "resume", if any. */
-	active(userId: string): Workout | null {
-		return workoutRepository.findActive(userId);
-	},
-
 	history(userId: string, query: WorkoutQuery): Workout[] {
 		return workoutRepository.list(userId, query);
+	},
+
+	/** How many recorded runs a session has — what resetting its history would delete. */
+	recordedCount(userId: string, sessionId: string): number {
+		return workoutRepository
+			.list(userId, { sessionId, limit: 500, offset: 0 })
+			.filter(isRecorded).length;
+	},
+
+	/**
+	 * Starts a session's history over, for when it changed enough that past runs
+	 * no longer time the same thing. Its runs are deleted; routine ticks are kept,
+	 * so streaks and the calendar's planned days do not rewrite themselves.
+	 */
+	resetHistory(userId: string, sessionId: string): { removed: number } {
+		sessionService.get(userId, sessionId);
+		const ids = workoutRepository.removeFinishedForSession(userId, sessionId);
+		routineRepository.detachWorkouts(ids);
+		return { removed: ids.length };
+	},
+
+	/** The latest workouts that count in the metrics, finished or ended early. */
+	recent(userId: string, limit: number): Workout[] {
+		return workoutRepository
+			.list(userId, { limit: limit * 3, offset: 0 })
+			.filter(isRecorded)
+			.slice(0, limit);
 	},
 
 	logStep(userId: string, workoutId: string, input: WorkoutStepLogInput): WorkoutStepLog {
@@ -73,9 +96,23 @@ export const workoutService = {
 		return workoutRepository.upsertStep(workoutId, input);
 	},
 
-	finish(userId: string, id: string, input: WorkoutFinish): WorkoutDetail {
+	/**
+	 * Ends a run. Idempotent, because a closed tab and the leave dialog can both
+	 * report the same ending. A run left with nothing done holds nothing worth
+	 * keeping, so it is deleted and `null` comes back.
+	 */
+	finish(userId: string, id: string, input: WorkoutFinish): WorkoutDetail | null {
 		const existing = workoutRepository.findById(userId, id);
 		if (!existing) throw notFound('Workout not found');
+		if (existing.status !== 'in_progress') return this.get(userId, id);
+
+		if (input.status === 'abandoned') {
+			workoutRepository.refreshTotals(id);
+			if ((workoutRepository.findById(userId, id)?.completedStepCount ?? 0) === 0) {
+				this.remove(userId, id);
+				return null;
+			}
+		}
 
 		const workout = workoutRepository.finish(userId, id, {
 			status: input.status,
@@ -94,6 +131,11 @@ export const workoutService = {
 		}
 
 		return this.get(userId, id);
+	},
+
+	/** Ends a run the athlete walked away from, keeping whatever was done. */
+	leave(userId: string, id: string): void {
+		this.finish(userId, id, { status: 'abandoned', notes: '' });
 	},
 
 	remove(userId: string, id: string): void {

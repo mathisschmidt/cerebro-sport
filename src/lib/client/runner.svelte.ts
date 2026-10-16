@@ -28,19 +28,22 @@ export class WorkoutRunner {
 	/** Reps actually done, when they differ from the plan. */
 	actualOverride = $state<number | null>(null);
 	finishing = $state(false);
-	/** Running sum of completed step durations — the number the server stores. */
-	measuredMs = $state(0);
 
-	/** Seeds the running total when resuming a workout that already has logs. */
-	seedMeasured(ms: number): void {
-		this.measuredMs = ms;
-	}
+	/**
+	 * Step indexes done rather than skipped, mirroring the server's upsert: a
+	 * step re-run after `back()` replaces its log, so a later skip un-records it.
+	 */
+	#recorded = new Set<number>();
+	/** How many steps are done — whether leaving now has anything worth keeping. */
+	recordedCount = $state(0);
 
 	#now = $state(Date.now());
 	#stepStartedAt = $state(Date.now());
 	#pausedAt: number | null = null;
 	#pausedMs = $state(0);
-	#workoutStartedAt: number;
+	#workoutStartedAt = Date.now();
+	/** When the last step ended; freezes the clock on the summary screen. */
+	#endedAt = $state<number | null>(null);
 	#stepStartedIso = new Date().toISOString();
 
 	#timer: ReturnType<typeof setInterval> | null = null;
@@ -48,26 +51,10 @@ export class WorkoutRunner {
 	/** Step logs whose POST failed, retried on the next step and at finish. */
 	#pending: WorkoutStepLogInput[] = [];
 
-	constructor(
-		workoutId: string,
-		plan: SessionPlan,
-		startedAt: string,
-		options: { startIndex?: number } = {}
-	) {
+	/** A run always starts at its first step — it is never resumed. */
+	constructor(workoutId: string, plan: SessionPlan) {
 		this.workoutId = workoutId;
 		this.plan = plan;
-		this.#workoutStartedAt = new Date(startedAt).getTime();
-		this.index = Math.min(Math.max(0, options.startIndex ?? 0), Math.max(0, plan.steps.length - 1));
-	}
-
-	/**
-	 * Where to pick a workout back up: the first step with no log yet. Reopening
-	 * an interrupted session has to continue it, not restart it.
-	 */
-	static resumeIndexFrom(plan: SessionPlan, loggedStepIndexes: number[]): number {
-		const logged = new Set(loggedStepIndexes);
-		const next = plan.steps.findIndex((step) => !logged.has(step.index));
-		return next === -1 ? Math.max(0, plan.steps.length - 1) : next;
 	}
 
 	get step(): PlanStep | undefined {
@@ -88,9 +75,12 @@ export class WorkoutRunner {
 		return Math.max(0, this.#now - this.#stepStartedAt - this.#pausedMs - pausedNow);
 	}
 
-	/** Wall clock since the workout started, including pauses. Shown live only. */
+	/**
+	 * Clock time since the first step started, pauses included, frozen once the
+	 * last step ends. The same span the server derives from the step logs.
+	 */
 	get totalElapsedMs(): number {
-		return Math.max(0, this.#now - this.#workoutStartedAt);
+		return Math.max(0, (this.#endedAt ?? this.#now) - this.#workoutStartedAt);
 	}
 
 	/** Planned length of the current step in ms, or 0 when it is self-paced. */
@@ -121,7 +111,8 @@ export class WorkoutRunner {
 	}
 
 	start(): void {
-		this.#stepStartedAt = Date.now();
+		this.#workoutStartedAt = Date.now();
+		this.#stepStartedAt = this.#workoutStartedAt;
 		this.#stepStartedIso = new Date().toISOString();
 		this.#tick();
 		this.#timer = setInterval(() => this.#tick(), TICK_MS);
@@ -164,7 +155,9 @@ export class WorkoutRunner {
 		if (!step || this.phase === 'finished') return;
 
 		const durationMs = this.stepElapsedMs;
-		if (!options.skipped) this.measuredMs += durationMs;
+		if (options.skipped) this.#recorded.delete(step.index);
+		else this.#recorded.add(step.index);
+		this.recordedCount = this.#recorded.size;
 		this.#enqueue({
 			stepIndex: step.index,
 			stepKey: step.key,
@@ -189,6 +182,7 @@ export class WorkoutRunner {
 
 		if (this.isLast) {
 			this.phase = 'finished';
+			this.#endedAt = Date.now();
 			return;
 		}
 		this.index += 1;
@@ -205,6 +199,7 @@ export class WorkoutRunner {
 		this.index -= 1;
 		this.#resetStep();
 		if (this.phase === 'finished') this.phase = 'running';
+		this.#endedAt = null;
 	}
 
 	#resetStep(): void {
@@ -248,6 +243,39 @@ export class WorkoutRunner {
 		try {
 			await this.flush();
 			await api.workouts.finish(this.workoutId, { status, notes });
+		} finally {
+			this.finishing = false;
+		}
+	}
+
+	/**
+	 * Reports the ending when the page is going away — a closed tab or a reload —
+	 * where a normal request would be cancelled. Beacons are fire-and-forget, so
+	 * the server's `finish` is idempotent and the run page closes any run it
+	 * finds left half-way. On the summary screen the run is complete; anywhere
+	 * else it was left.
+	 */
+	endOnUnload(): void {
+		const status = this.phase === 'finished' ? 'completed' : 'abandoned';
+		const send = (path: string, body: unknown) =>
+			navigator.sendBeacon?.(
+				`/api/workouts/${this.workoutId}/${path}`,
+				new Blob([JSON.stringify(body)], { type: 'application/json' })
+			);
+		for (const log of this.#pending) send('steps', log);
+		this.#pending = [];
+		send('finish', { status, notes: '' });
+	}
+
+	/**
+	 * Leaves without keeping anything. Queued logs are dropped rather than
+	 * flushed — they would only be deleted with the workout.
+	 */
+	async discard(): Promise<void> {
+		this.finishing = true;
+		try {
+			this.#pending = [];
+			await api.workouts.remove(this.workoutId);
 		} finally {
 			this.finishing = false;
 		}

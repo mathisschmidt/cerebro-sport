@@ -115,7 +115,9 @@ export const api = {
 		create: (body: SessionInput) => request<SessionDetail>('POST', '/api/sessions', { body }),
 		update: (id: string, body: SessionInput) =>
 			request<SessionDetail>('PUT', `/api/sessions/${id}`, { body }),
-		remove: (id: string) => request<void>('DELETE', `/api/sessions/${id}`)
+		remove: (id: string) => request<void>('DELETE', `/api/sessions/${id}`),
+		resetHistory: (id: string) =>
+			request<{ removed: number }>('DELETE', `/api/sessions/${id}/history`)
 	},
 
 	routines: {
@@ -136,12 +138,10 @@ export const api = {
 		start: (body: WorkoutStart) => request<WorkoutDetail>('POST', '/api/workouts', { body }),
 		get: (id: string, fetch?: FetchLike) =>
 			request<WorkoutDetail>('GET', `/api/workouts/${id}`, { fetch }),
-		active: (fetch?: FetchLike) =>
-			request<Workout | null>('GET', '/api/workouts/active', { fetch }),
 		logStep: (id: string, body: WorkoutStepLogInput) =>
 			request<void>('POST', `/api/workouts/${id}/steps`, { body }),
 		finish: (id: string, body: WorkoutFinish) =>
-			request<WorkoutDetail>('POST', `/api/workouts/${id}/finish`, { body }),
+			request<WorkoutDetail | null>('POST', `/api/workouts/${id}/finish`, { body }),
 		remove: (id: string) => request<void>('DELETE', `/api/workouts/${id}`)
 	},
 

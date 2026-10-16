@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { RoutineOccurrence } from '$domain/models/routine.ts';
-	import { formatClock } from '$domain/models/common.ts';
 	import Badge from '$components/ui/Badge.svelte';
 	import Button from '$components/ui/Button.svelte';
 	import Icon from '$components/ui/Icon.svelte';
@@ -42,9 +41,6 @@
 			<h3 class="text-ink text-sm font-semibold {settled ? 'line-through' : ''}">
 				{occurrence.routineName}
 			</h3>
-			{#if occurrence.timeOfDay}
-				<Badge>{occurrence.timeOfDay}</Badge>
-			{/if}
 			{#if skipped}<Badge tone="warning">Skipped</Badge>{/if}
 		</div>
 		<p class="text-ink-subtle mt-0.5 flex flex-wrap items-center gap-x-3 text-[12px]">
@@ -52,12 +48,6 @@
 				<Icon name="layers" size={11} />
 				{occurrence.sessionName}
 			</span>
-			{#if occurrence.estimatedDurationSec > 0}
-				<span class="inline-flex items-center gap-1">
-					<Icon name="clock" size={11} />
-					{formatClock(occurrence.estimatedDurationSec)}
-				</span>
-			{/if}
 		</p>
 	</div>
 

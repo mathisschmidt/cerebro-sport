@@ -24,7 +24,7 @@ export const metricsService = {
 		const windowDays = options.windowDays ?? DEFAULT_METRICS_WINDOW_DAYS;
 		const from = addDays(today, -(windowDays - 1));
 
-		const workouts = workoutRepository.listDetails(userId, { limit: 500, offset: 0 });
+		const workouts = workoutRepository.list(userId, { limit: 500, offset: 0 });
 		const occurrences = routineService.occurrences(userId, from, today);
 
 		// Sessions that were deleted still own history, so the two sources are merged.
@@ -40,10 +40,7 @@ export const metricsService = {
 		});
 	},
 
-	/**
-	 * Just the streak and calendar. The home page shows only these, and computing
-	 * per-session progress for it would load every step log for nothing.
-	 */
+	/** Just the streak and calendar — all the home page shows. */
 	streak(userId: string, options: { today?: IsoDate; windowDays?: number } = {}): StreakMetrics {
 		const today = options.today ?? todayIso();
 		const windowDays = options.windowDays ?? DEFAULT_METRICS_WINDOW_DAYS;
@@ -51,7 +48,7 @@ export const metricsService = {
 
 		return buildStreakMetrics(
 			routineService.occurrences(userId, from, today),
-			workoutRepository.listDetails(userId, { from, limit: 500, offset: 0 }),
+			workoutRepository.list(userId, { from, limit: 500, offset: 0 }),
 			{ today, windowDays }
 		);
 	},
@@ -64,7 +61,7 @@ export const metricsService = {
 		const name = summary?.name ?? historic?.name;
 		if (!name) throw notFound('Session not found');
 
-		const workouts = workoutRepository.listDetails(userId, { sessionId, limit: 500, offset: 0 });
+		const workouts = workoutRepository.list(userId, { sessionId, limit: 500, offset: 0 });
 		return buildSessionMetrics(sessionId, name, workouts);
 	}
 };

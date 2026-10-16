@@ -10,12 +10,67 @@ import { planStepKindSchema, sessionPlanSchema } from './plan.ts';
 
 /**
  * A workout is one execution of a session, and the only source of metrics.
- * Step logs are written as they happen so an interrupted session can be resumed
- * or salvaged instead of lost.
+ * Step logs are written as they happen, so leaving mid-session keeps what was
+ * done. A run is never resumed: leaving it, however it happens, ends it.
  */
 
+/**
+ * `abandoned` means left before the last step and kept: the athlete chose to
+ * save what they had done. Leaving and discarding deletes the workout instead.
+ */
 export const workoutStatusSchema = z.enum(['in_progress', 'completed', 'abandoned']);
 export type WorkoutStatus = z.infer<typeof workoutStatusSchema>;
+
+type Counted = Pick<Workout, 'status' | 'completedStepCount' | 'plannedStepCount'>;
+
+/**
+ * Does this workout feed the metrics? A finished run always does; one left early
+ * does when at least one step was actually done.
+ */
+export function isRecorded(workout: Pick<Workout, 'status' | 'completedStepCount'>): boolean {
+	return (
+		workout.status === 'completed' ||
+		(workout.status === 'abandoned' && workout.completedStepCount > 0)
+	);
+}
+
+/** Share of the planned steps not done, 0–1 — skipped, or never reached. */
+export function missedShare(workout: Pick<Workout, 'completedStepCount' | 'plannedStepCount'>): number {
+	if (workout.plannedStepCount === 0) return 0;
+	return Math.max(0, 1 - workout.completedStepCount / workout.plannedStepCount);
+}
+
+/**
+ * How a run went, on one scale used everywhere a run is shown:
+ *  - `complete`     every step done
+ *  - `unfinished`   up to 30% missed
+ *  - `skipped_some` more than 30% missed
+ *  - `ended_early`  more than half missed
+ */
+export type WorkoutOutcome = 'complete' | 'unfinished' | 'skipped_some' | 'ended_early';
+
+export const WORKOUT_OUTCOME_LABEL: Record<WorkoutOutcome, string> = {
+	complete: 'Completed',
+	unfinished: 'Not finished',
+	skipped_some: 'Skipped a few',
+	ended_early: 'Ended early'
+};
+
+export function workoutOutcome(workout: Counted): WorkoutOutcome {
+	const missed = missedShare(workout);
+	if (workout.status === 'completed' && missed === 0) return 'complete';
+	if (missed > 0.5) return 'ended_early';
+	if (missed > 0.3) return 'skipped_some';
+	return 'unfinished';
+}
+
+/**
+ * Only a run taken to the end with nothing skipped says anything about how long
+ * the session takes, so only those feed a session's duration stats and trend.
+ */
+export function countsInSessionStats(workout: Counted): boolean {
+	return workoutOutcome(workout) === 'complete';
+}
 
 /** Body for starting a workout. */
 export const workoutStartSchema = z.object({
@@ -73,17 +128,12 @@ export const workoutSchema = z.object({
 	startedAt: isoDateTimeSchema,
 	completedAt: isoDateTimeSchema.nullable(),
 	/**
-	 * Measured time in the session: `activeMs + restMs`.
-	 *
-	 * Deliberately not the wall clock from start to finish — a phone left locked
-	 * mid-session would otherwise report an hour of "training". Paused time is
-	 * excluded for the same reason, which is what makes runs comparable.
+	 * Clock time from the start of the first step to the end of the last one.
+	 * Pauses and breaks are included — that is how long the session took. Both
+	 * ends come from the step logs, so the phone's clock is the only clock used.
 	 */
 	totalMs: z.number().int().min(0),
-	/** Time inside exercise steps. */
-	activeMs: z.number().int().min(0),
-	/** Time inside rest steps. */
-	restMs: z.number().int().min(0),
+	/** Steps done, not skipped. Against `plannedStepCount`, this is the outcome. */
 	completedStepCount: z.number().int().min(0),
 	plannedStepCount: z.number().int().min(0),
 	notes: z.string(),

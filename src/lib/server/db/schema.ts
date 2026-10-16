@@ -178,9 +178,8 @@ export const workouts = sqliteTable(
 		status: text('status').notNull().default('in_progress'),
 		startedAt: text('started_at').notNull(),
 		completedAt: text('completed_at'),
+		/** Clock span of the step logs, breaks included — see `refreshTotals`. */
 		totalMs: integer('total_ms').notNull().default(0),
-		activeMs: integer('active_ms').notNull().default(0),
-		restMs: integer('rest_ms').notNull().default(0),
 		completedStepCount: integer('completed_step_count').notNull().default(0),
 		plannedStepCount: integer('planned_step_count').notNull().default(0),
 		notes: text('notes').notNull().default(''),

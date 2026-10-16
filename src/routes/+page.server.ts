@@ -21,8 +21,7 @@ export const load: PageServerLoad = ({ locals }) => {
 		occurrences: routineService.day(id, today),
 		upcoming: routineService.occurrences(id, addDays(today, 1), addDays(today, 7)),
 		streak: metricsService.streak(id),
-		activeWorkout: workoutService.active(id),
 		sessions: sessionService.list(id, { limit: 100, offset: 0 }).items,
-		recentWorkouts: workoutService.history(id, { status: 'completed', limit: 4, offset: 0 })
+		recentWorkouts: workoutService.recent(id, 4)
 	};
 };

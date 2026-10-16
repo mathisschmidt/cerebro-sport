@@ -107,6 +107,16 @@ export function draftToInput(draft: SessionDraft): SessionInput {
 }
 
 /**
+ * Did an edit change what is actually run — blocks, exercises, measures, rest?
+ * Name and description are labels: runs from before a rename still time the
+ * same session, so only the block tree counts. Both sides go through
+ * `draftToInput`, so trimming and field order never register as a change.
+ */
+export function planChanged(before: SessionInput, after: SessionInput): boolean {
+	return JSON.stringify(before.blocks) !== JSON.stringify(after.blocks);
+}
+
+/**
  * A draft rendered as a `SessionDetail`, so the live preview can run the very
  * same `buildPlan` the runner will use rather than approximating it.
  */

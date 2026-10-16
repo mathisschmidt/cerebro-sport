@@ -74,11 +74,28 @@ handler a `SessionUser`; page loads use `requireUser` / `requireAdmin` from
 ## Charts
 
 Load the `dataviz` skill before adding or changing one. The palette in
-`app.css` (`--viz-*`) was validated with that skill's script — monotone
-lightness, ≥0.06 lightness gaps between ramp steps, and ≥2:1 contrast for the
-step nearest the surface, in both themes. If you change a chart colour, re-run
-the validator rather than eyeballing it. One series means no legend; axis ticks
-round to clean durations via `$domain/services/scale.ts`.
+`app.css` (`--viz-*`) was validated with that skill's script, in both themes:
+contrast against the surface, and for `--viz-good` / `--viz-critical` —
+the training calendar's only two colours — colour-blind separation as a pair.
+If you change a chart colour, re-run the validator rather than eyeballing it.
+One series means no legend; axis ticks round to clean durations via
+`$domain/services/scale.ts`.
+
+## Runs and metrics
+
+The rules are in the README ("How runs are measured"); in code they live in
+exactly one place each — keep it that way:
+
+- **A run's outcome** is `workoutOutcome()` in `lib/domain/models/workout.ts`
+  (green / green / yellow / red at 0, ≤30%, >30%, >50% of steps missed).
+  `countsInSessionStats()` is the only gate for a session's duration stats;
+  `isRecorded()` the only gate for counting a run at all. Screens render an
+  outcome through `OutcomeBadge` and never re-derive a threshold.
+- **A calendar day's state** is computed in `buildStreakMetrics`; the
+  calendar component only maps it to a colour.
+- **A run is never resumed.** The run page's load ends any run it finds with
+  steps already logged, and the runner always starts at step one. Do not add a
+  resume path back.
 
 ## The training pack format
 
@@ -163,11 +180,15 @@ file.
   change on every save. Nothing may store those ids long-term — this is exactly
   why workouts snapshot their plan.
 - **`workouts` has no FK to `sessions`** on purpose. Do not add one.
-- **`totalMs` is the sum of step durations**, not wall clock. Keep it derived in
-  `refreshTotals`; never set it from `Date.now()` differences.
-- **Step keys are the join key for progress metrics.** Changing how
-  `buildPlan` builds `key` silently disconnects every existing workout from its
-  history.
+- **`totalMs` is clock time, breaks included** — first step started to last
+  step finished. Keep it derived from the step logs in `refreshTotals`; never set
+  it from `Date.now()` on the server, whose clock is not the phone's.
+- **`finish` is idempotent and may delete.** A closed tab sends it by beacon,
+  possibly after the leave dialog already did; ending a run with nothing done
+  deletes it and returns `null`.
+- **Step keys are stored on every step log** and stay stable across
+  executions. No metric reads them today, but changing how `buildPlan` builds
+  `key` would make any future per-step history impossible to rebuild.
 - **Occurrence rows only exist for deviations.** `pending` is represented by the
   absence of a row; `resolveOccurrence('pending')` deletes.
 - **Cross-account reads return 404, not 403.** Scoping happens in the `where`
